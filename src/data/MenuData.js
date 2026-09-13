@@ -1,85 +1,622 @@
 export const categories = [
-    { id: 'fresh-chicken', name: 'Fresh Chicken' },
-    { id: 'frozen-goods', name: 'Frozen Goods' },
-    { id: 'marinated', name: 'Marinated Items' },
-    { id: 'ready-to-eat', name: 'Ready to Eat' },
+    { id: 'high-end-beef', name: 'High End Beef (Min 1 Slab)' },
+    { id: 'chicken-wholesale', name: 'Chicken Wholesale (Min 1 Box)' },
+    { id: 'beef-wholesale', name: 'Beef Wholesale (Min 1 Box)' },
+    { id: 'pork-wholesale', name: 'Pork Wholesale (Min 1 Box)' },
+    { id: 'sides-others', name: 'Sides & Seafood (Min 1 Box)' },
+    { id: 'rice', name: 'Rice (25kls)' },
 ];
 
 export const menuItems = [
-    // Fresh Chicken
+    // High End Beef (Minimum 1 SLAB)
     {
         id: 1,
-        categoryId: 'fresh-chicken',
-        name: 'Whole Dressed Chicken',
-        description: 'Premium quality fresh dressed chicken.',
-        price: 220,
-        image: 'https://images.unsplash.com/photo-1606787366850-de6330128bfc?auto=format&fit=crop&w=400&q=80',
-        variations: [
-            { name: '1kg', price: 220 },
-            { name: '1/2 kg', price: 110 },
-            { name: '1/4 kg', price: 60 }
-        ],
-        flavors: ["Whole", "Cuts"],
-        optionsLabel: "Preparation"
+        categoryId: 'high-end-beef',
+        name: 'Beef Shortloin St. Helens',
+        description: 'High-end beef slab. Minimum 1 Slab.',
+        price: 1850,
+        stock: 15,
+        lowStockThreshold: 5,
+        unit: 'slab',
+        image: 'https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Minimum 1 Slab'
     },
     {
         id: 2,
-        categoryId: 'fresh-chicken',
-        name: 'Chicken Breast (Boneless)',
-        description: 'Fresh boneless chicken breast, perfect for fillets.',
-        price: 260,
-        image: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=400&q=80',
-        variations: [
-            { name: '500g', price: 140 },
-            { name: '1kg', price: 260 }
-        ]
+        categoryId: 'high-end-beef',
+        name: 'US Wagyu Chuck Eye Roll',
+        description: 'Premium US Wagyu Chuck Eye Roll slab. Minimum 1 Slab.',
+        price: 1750,
+        stock: 12,
+        lowStockThreshold: 5,
+        unit: 'slab',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Minimum 1 Slab'
     },
-    // Marinated
     {
         id: 3,
-        categoryId: 'marinated',
-        name: 'Marinated Roast Chicken',
-        description: 'Ready-to-bake chicken with our secret spice blend.',
-        price: 320,
-        promoPrice: 299,
-        image: 'https://images.unsplash.com/photo-1594464083313-2dc704bb43c8?auto=format&fit=crop&w=400&q=80',
-        flavors: ['Classic Garlic', 'Spicy BBQ', 'Honey Soy']
+        categoryId: 'high-end-beef',
+        name: 'Ribeye Choice Grade Excel',
+        description: 'Choice Grade Excel Ribeye slab. Minimum 1 Slab.',
+        price: 2250,
+        stock: 8,
+        lowStockThreshold: 5,
+        unit: 'slab',
+        image: 'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Minimum 1 Slab'
     },
+
+    // Chicken Wholesale (Minimum 1 Box)
     {
         id: 4,
-        categoryId: 'marinated',
-        name: 'Chicken Wings (Buffalo Style)',
-        description: 'Marinated wings ready for frying or baking.',
+        categoryId: 'chicken-wholesale',
+        name: 'Whole Chicken 1kg',
+        description: 'Fresh whole dressed chicken (1kg). Minimum 1 Box.',
         price: 180,
-        image: 'https://images.unsplash.com/photo-1527477396000-e27163b481c2?auto=format&fit=crop&w=400&q=80',
-        variations: [
-            { name: 'Set of 6', price: 180 },
-            { name: 'Set of 12', price: 340 }
-        ]
+        stock: 50,
+        lowStockThreshold: 10,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
     },
-    // Frozen Goods
     {
         id: 5,
-        categoryId: 'frozen-goods',
-        name: 'Chicken Nuggets',
-        description: 'Premium frozen chicken nuggets for kids and snacks.',
-        price: 150,
-        image: 'https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=400&q=80',
-        variations: [
-            { name: '250g', price: 85 },
-            { name: '500g', price: 150 }
-        ]
+        categoryId: 'chicken-wholesale',
+        name: 'Chicken Wings Seara',
+        description: 'Seara premium chicken wings. Minimum 1 Box.',
+        price: 210,
+        stock: 35,
+        lowStockThreshold: 8,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1527477396000-e27163b481c2?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
     },
     {
         id: 6,
-        categoryId: 'frozen-goods',
-        name: 'Chicken Longganisa',
-        description: 'Authentic Filipino style frozen chicken sausage.',
+        categoryId: 'chicken-wholesale',
+        name: 'Chicken Wings NAT',
+        description: 'NAT quality chicken wings. Minimum 1 Box.',
+        price: 215,
+        stock: 25,
+        lowStockThreshold: 8,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1567620832903-9fc6debc209f?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 7,
+        categoryId: 'chicken-wholesale',
+        name: 'Chicken Quarter Leg AJC',
+        description: 'AJC Chicken Quarter Legs. Minimum 1 Box.',
+        price: 160,
+        stock: 40,
+        lowStockThreshold: 10,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 8,
+        categoryId: 'chicken-wholesale',
+        name: 'Chicken Leg Fillet Levo',
+        description: 'Levo boneless chicken leg fillet. Minimum 1 Box.',
+        price: 230,
+        stock: 30,
+        lowStockThreshold: 8,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 9,
+        categoryId: 'chicken-wholesale',
+        name: 'Chicken Breast Fillet Seara',
+        description: 'Seara skinless chicken breast fillet. Minimum 1 Box.',
+        price: 280,
+        stock: 20,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1604908177453-7462950a6a3b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 10,
+        categoryId: 'chicken-wholesale',
+        name: 'Chicken Thigh Marjac',
+        description: 'Marjac juicy chicken thighs. Minimum 1 Box.',
+        price: 155,
+        stock: 45,
+        lowStockThreshold: 10,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 11,
+        categoryId: 'chicken-wholesale',
+        name: 'Chicken Skin Copacol',
+        description: 'Copacol clean chicken skin. Minimum 1 Box.',
+        price: 99,
+        stock: 3,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+
+    // Beef Wholesale (Minimum 1 Box)
+    {
+        id: 12,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Shortplate Excel',
+        description: 'Excel Beef Shortplate for samgyupsal / yakiniku. Minimum 1 Box.',
+        price: 560,
+        stock: 25,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 13,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Shortplate Swift',
+        description: 'Swift premium Beef Shortplate. Minimum 1 Box.',
+        price: 535,
+        stock: 22,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 14,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Brisket Bonein Greenham',
+        description: 'Greenham Bone-in Beef Brisket. Minimum 1 Box.',
+        price: 178,
+        stock: 18,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 15,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Shank Bonein Frimsa',
+        description: 'Frimsa Bone-in Beef Shank for bulalo. Minimum 1 Box.',
+        price: 375,
+        stock: 15,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 16,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Forequarter Mondelli',
+        description: 'Mondelli Beef Forequarter cuts. Minimum 1 Box.',
+        price: 425,
+        stock: 10,
+        lowStockThreshold: 3,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 17,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Trimmings Mondelli',
+        description: 'Mondelli Beef Trimmings. Minimum 1 Box.',
+        price: 335,
+        stock: 30,
+        lowStockThreshold: 8,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 18,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Tail / Oxtail Madeka',
+        description: 'Madeka fresh Oxtail for Kare-kare. Minimum 1 Box.',
+        price: 292,
+        stock: 4,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 19,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Bone Marrow Hutten',
+        description: 'Hutten rich Beef Bone Marrow cuts. Minimum 1 Box.',
+        price: 280,
+        stock: 14,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 20,
+        categoryId: 'beef-wholesale',
+        name: 'Beef Tripe Throsby',
+        description: 'Throsby cleaned Beef Tripe. Minimum 1 Box.',
+        price: 186,
+        stock: 16,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 21,
+        categoryId: 'beef-wholesale',
+        name: 'Ground Beef',
+        description: 'Quality Ground Beef lean mix. Minimum 1 Box.',
+        price: 269,
+        stock: 35,
+        lowStockThreshold: 8,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+
+    // Pork Wholesale (Minimum 1 Box)
+    {
+        id: 22,
+        categoryId: 'pork-wholesale',
+        name: 'Belly BLSO Aurora',
+        description: 'Aurora Boneless Skin-On Pork Belly. Minimum 1 Box.',
+        price: 283,
+        stock: 20,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 23,
+        categoryId: 'pork-wholesale',
+        name: 'Belly BLSO Seara',
+        description: 'Seara Boneless Skin-On Pork Belly. Minimum 1 Box.',
+        price: 278,
+        stock: 18,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 24,
+        categoryId: 'pork-wholesale',
+        name: 'Belly BISO Bernard Jean',
+        description: 'Bernard Jean Bone-In Skin-On Pork Belly. Minimum 1 Box.',
+        price: 270,
+        stock: 2,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 25,
+        categoryId: 'pork-wholesale',
+        name: 'Belly BISO Dahlia',
+        description: 'Dahlia Bone-In Skin-On Pork Belly. Minimum 1 Box.',
+        price: 268,
+        stock: 22,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 26,
+        categoryId: 'pork-wholesale',
+        name: 'Porkloin BISL Seara',
+        description: 'Seara Bone-In Skinless Pork Loin. Minimum 1 Box.',
+        price: 193,
+        stock: 15,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 27,
+        categoryId: 'pork-wholesale',
+        name: 'Porkloin BLSL Saudali',
+        description: 'Saudali Boneless Skinless Pork Loin. Minimum 1 Box.',
+        price: 239,
+        stock: 12,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 28,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Spareribs Frimesa',
+        description: 'Frimesa Pork Spareribs. Minimum 1 Box.',
+        price: 281,
+        stock: 25,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 29,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Collar Sadia',
+        description: 'Sadia Pork Collar cut. Minimum 1 Box.',
+        price: 210,
+        stock: 14,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 30,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Hamleg BLSL Alibem',
+        description: 'Alibem Boneless Skinless Pork Hamleg. Minimum 1 Box.',
+        price: 213,
+        stock: 19,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 31,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Hamleg BISO Alibem',
+        description: 'Alibem Bone-In Skin-On Pork Hamleg. Minimum 1 Box.',
+        price: 168,
+        stock: 17,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 32,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Kasim My Pork',
+        description: 'My Pork Kasim cuts. Minimum 1 Box.',
+        price: 206,
+        stock: 30,
+        lowStockThreshold: 8,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 33,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Riblets Olymel',
+        description: 'Olymel Pork Riblets. Minimum 1 Box.',
+        price: 158,
+        stock: 20,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 34,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Liver Compaxo',
+        description: 'Compaxo Pork Liver. Minimum 1 Box.',
+        price: 87,
+        stock: 25,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 35,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Liver Dahlia 12kls',
+        description: 'Dahlia Pork Liver (12kg pack). Minimum 1 Box.',
+        price: 87,
+        stock: 12,
+        lowStockThreshold: 3,
+        unit: 'box',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 36,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Jowls Vion',
+        description: 'Vion Pork Jowls. Minimum 1 Box.',
+        price: 204,
+        stock: 8,
+        lowStockThreshold: 4,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 37,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Jowls Frescos',
+        description: 'Frescos Pork Jowls. Minimum 1 Box.',
+        price: 201,
+        stock: 10,
+        lowStockThreshold: 4,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 38,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Mask Pamplona',
+        description: 'Pamplona Pork Mask (Ulo/Ear/Jowl). Minimum 1 Box.',
+        price: 157,
+        stock: 15,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 39,
+        categoryId: 'pork-wholesale',
+        name: 'Pata Front Conestoga',
+        description: 'Conestoga Front Pork Pata. Minimum 1 Box.',
+        price: 176,
+        stock: 14,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 40,
+        categoryId: 'pork-wholesale',
+        name: 'Pata Front Norwest',
+        description: 'Norwest Front Pork Pata. Minimum 1 Box.',
+        price: 178,
+        stock: 12,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 41,
+        categoryId: 'pork-wholesale',
+        name: 'Pata Hock Sadia',
+        description: 'Sadia Pork Pata Hock. Minimum 1 Box.',
+        price: 173,
+        stock: 18,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 42,
+        categoryId: 'pork-wholesale',
+        name: 'Pupor Vanroi',
+        description: 'Vanroi Pork Pupor. Minimum 1 Box.',
+        price: 161,
+        stock: 9,
+        lowStockThreshold: 3,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 43,
+        categoryId: 'pork-wholesale',
+        name: 'Pork Cutting Fat Skiba',
+        description: 'Skiba Pork Cutting Fat. Minimum 1 Box.',
+        price: 130,
+        stock: 25,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 44,
+        categoryId: 'pork-wholesale',
+        name: 'Flowerfat Westfort',
+        description: 'Westfort Flowerfat / Pork Fat. Minimum 1 Box.',
+        price: 139,
+        stock: 20,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 45,
+        categoryId: 'pork-wholesale',
+        name: 'Flowerfat Compaxo',
+        description: 'Compaxo Flowerfat / Pork Fat. Minimum 1 Box.',
+        price: 139,
+        stock: 18,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 46,
+        categoryId: 'pork-wholesale',
+        name: 'Flowerfat Agrosuper',
+        description: 'Agrosuper Flowerfat / Pork Fat. Minimum 1 Box.',
+        price: 137,
+        stock: 22,
+        lowStockThreshold: 5,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+
+    // Sides & Seafood Wholesale
+    {
+        id: 47,
+        categoryId: 'sides-others',
+        name: 'French Fries Kitchen Saver',
+        description: 'Kitchen Saver Frozen French Fries. Minimum 1 Box.',
+        price: 105,
+        stock: 40,
+        lowStockThreshold: 10,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+    {
+        id: 48,
+        categoryId: 'sides-others',
+        name: 'Creamdory Fillet',
+        description: 'Frozen Creamdory Fish Fillet. Minimum 1 Box.',
         price: 120,
-        image: 'https://images.unsplash.com/photo-1541518763669-27f714620583?auto=format&fit=crop&w=400&q=80',
-        variations: [
-            { name: 'Standard Pack', price: 120 },
-            { name: 'Family Pack', price: 220 }
-        ]
+        stock: 30,
+        lowStockThreshold: 8,
+        unit: 'kg',
+        image: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Wholesale min 1 box'
+    },
+
+    // Rice (25kls)
+    {
+        id: 49,
+        categoryId: 'rice',
+        name: 'Master Chef Rice (25kg)',
+        description: 'Master Chef Premium Quality Rice 25kg Sack.',
+        price: 1580,
+        stock: 25,
+        lowStockThreshold: 5,
+        unit: 'sack',
+        image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Per 25kg Sack'
+    },
+    {
+        id: 50,
+        categoryId: 'rice',
+        name: 'Perfect Hasmin Blue Rice (25kg)',
+        description: 'Perfect Hasmin Blue Fragrant Rice 25kg Sack.',
+        price: 1540,
+        stock: 20,
+        lowStockThreshold: 5,
+        unit: 'sack',
+        image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80',
+        minOrderNote: 'Per 25kg Sack'
     }
 ];

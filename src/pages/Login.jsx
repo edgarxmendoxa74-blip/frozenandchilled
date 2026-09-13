@@ -14,11 +14,11 @@ const Login = () => {
         e.preventDefault();
         setError('');
 
-        // Developer Bypass: Allow login with admin/admin if Supabase users aren't setup yet
-        if (email === 'admin@3jdressedchicken.com' && password === 'admin') {
-            console.log('Developer bypass used');
+        // Admin Bypass: Allow login with admin or admin@chilledandfrozenhub.com
+        const cleanEmail = email.trim().toLowerCase();
+        if ((cleanEmail === 'admin@chilledandfrozenhub.com' || cleanEmail === 'admin') && password === 'admin') {
+            console.log('Admin login bypass active');
             localStorage.setItem('admin_bypass', 'true');
-            // Refresh page to trigger context update or navigate directly
             window.location.href = '/admin/dashboard';
             return;
         }
@@ -40,12 +40,12 @@ const Login = () => {
             {/* Left Side - Brand/Hero */}
             <div style={{ position: 'relative', background: 'var(--primary)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ position: 'absolute', inset: 0, opacity: 0.3, background: 'url("/hero.jpg") no-repeat center center/cover', mixBlendMode: 'overlay' }}></div>
-                <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', color: 'var(--accent)', padding: '40px' }}>
-                    <div style={{ background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)', padding: '20px', borderRadius: '30px', display: 'inline-block', marginBottom: '30px', border: '1px solid rgba(255,255,255,0.2)' }}>
-                        <img src="/logo.jpg" alt="3J Dressed Chicken Store" style={{ height: '100px', display: 'block' }} />
+                <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', color: 'white', padding: '40px' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', padding: '20px', borderRadius: '30px', display: 'inline-block', marginBottom: '30px', border: '1px solid rgba(255,255,255,0.3)' }}>
+                        <img src="/logo.png" alt="Chilled And Frozen Hub Logo" style={{ height: '110px', display: 'block' }} />
                     </div>
-                    <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '3rem', marginBottom: '10px' }}>3J Dressed Chicken Store</h1>
-                    <p style={{ fontSize: '1.2rem', letterSpacing: '2px', textTransform: 'uppercase', opacity: 0.9 }}>Matinlo kag Garantisado</p>
+                    <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', fontWeight: 900 }}>Chilled And Frozen Hub</h1>
+                    <p style={{ fontSize: '1.1rem', letterSpacing: '2px', textTransform: 'uppercase', opacity: 0.9, fontWeight: 700 }}>Trader • Supplier • Distributor</p>
                 </div>
             </div>
 
@@ -78,7 +78,7 @@ const Login = () => {
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    placeholder="admin@3jdressedchicken.com"
+                                    placeholder="admin@chilledandfrozenhub.com"
                                     style={{ width: '100%', padding: '15px 15px 15px 45px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '1rem', outline: 'none', transition: 'all 0.3s' }}
                                 />
                             </div>

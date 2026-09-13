@@ -85,7 +85,7 @@ const AdminDashboard = () => {
             manual_status: 'auto', // auto, open, closed
             open_time: '10:00',
             close_time: '01:00',
-            store_name: '3J Dressed Chicken Store',
+            store_name: 'Chilled And Frozen Hub',
             address: '',
             contact: '',
             logo_url: '',
@@ -185,12 +185,16 @@ const AdminDashboard = () => {
                 description: formData.get('description'),
                 price: Number(formData.get('price')),
                 promo_price: formData.get('promoPrice') ? Number(formData.get('promoPrice')) : null,
+                stock: Number(formData.get('stock') || 0),
+                low_stock_threshold: Number(formData.get('lowStockThreshold') || 5),
+                unit: formData.get('unit') || 'kg',
+                min_order_note: formData.get('minOrderNote') || '',
                 category_id: formData.get('categoryId'),
                 image: editingItem.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80',
                 variations: tempVariations,
                 flavors: tempFlavors,
                 addons: tempAddons,
-                out_of_stock: formData.get('outOfStock') === 'on'
+                out_of_stock: formData.get('outOfStock') === 'on' || Number(formData.get('stock') || 0) === 0
             };
 
             let finalItem;
@@ -208,7 +212,7 @@ const AdminDashboard = () => {
             }
 
             setEditingItem(null);
-            showMessage('Product saved successfully!');
+            showMessage('Product & inventory saved successfully!');
         };
 
         const deleteItem = async (id) => {
@@ -230,11 +234,9 @@ const AdminDashboard = () => {
             const [removed] = newItems.splice(index, 1);
             newItems.splice(newIndex, 0, removed);
 
-            // Re-index all items to ensure consistent sort_order
             const updatedItems = newItems.map((item, idx) => ({ ...item, sort_order: idx }));
             setItems(updatedItems);
 
-            // Update Supabase for all items (batch update)
             const { error } = await supabase.from('menu_items').upsert(updatedItems);
             if (error) {
                 console.error('Error syncing order:', error);
@@ -250,11 +252,35 @@ const AdminDashboard = () => {
             return matchesSearch && matchesCategory;
         });
 
+        const lowStockItems = items.filter(i => (i.stock !== undefined && i.stock <= (i.low_stock_threshold || i.lowStockThreshold || 5)));
+
         // Render List
         if (!editingItem) return (
             <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                {/* Low Stock Alert Section */}
+                {lowStockItems.length > 0 && (
+                    <div style={{ background: '#fef2f2', border: '2px solid #fca5a5', padding: '20px', borderRadius: '16px', marginBottom: '30px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#991b1b', marginBottom: '10px' }}>
+                            <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+                            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Low Stock Alert ({lowStockItems.length} Products)</h3>
+                        </div>
+                        <p style={{ fontSize: '0.9rem', color: '#7f1d1d', margin: '0 0 15px' }}>The following items are running low on stock and need to be replenished soon:</p>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            {lowStockItems.map(item => (
+                                <div key={item.id} style={{ background: 'white', border: '1px solid #f87171', padding: '8px 15px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1f2937' }}>{item.name}</span>
+                                    <span style={{ background: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 800 }}>
+                                        {item.stock} {item.unit || 'kg'} left
+                                    </span>
+                                    <button onClick={() => setEditingItem(item)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}>Update Stock</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
-                    <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Menu Items</h2>
+                    <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Inventory & Menu List</h2>
                     <div style={{ display: 'flex', gap: '10px', flex: 1, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         <input
                             type="text"
@@ -271,7 +297,7 @@ const AdminDashboard = () => {
                             <option value="all">All Categories</option>
                             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
-                        <button onClick={() => setEditingItem({ id: 'new', category_id: categories[0]?.id })} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px' }}>
+                        <button onClick={() => setEditingItem({ id: 'new', category_id: categories[0]?.id, stock: 20, low_stock_threshold: 5, unit: 'kg' })} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px' }}>
                             <Plus size={18} /> Add Product
                         </button>
                     </div>
@@ -280,40 +306,72 @@ const AdminDashboard = () => {
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 10px' }}>
                         <thead>
-                            <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}><th style={{ padding: '10px' }}>Product</th><th style={{ padding: '10px' }}>Category</th><th style={{ padding: '10px' }}>Price</th><th style={{ padding: '10px' }}>Actions</th></tr>
+                            <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                                <th style={{ padding: '10px' }}>Product</th>
+                                <th style={{ padding: '10px' }}>Category</th>
+                                <th style={{ padding: '10px' }}>Price</th>
+                                <th style={{ padding: '10px' }}>Stock Level</th>
+                                <th style={{ padding: '10px' }}>Status</th>
+                                <th style={{ padding: '10px' }}>Actions</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {filteredItems.length === 0 ? (
-                                <tr><td colSpan="4" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No products found matching your criteria.</td></tr>
-                            ) : filteredItems.map(item => (
-                                <tr key={item.id} style={{ background: '#f8fafc' }}>
-                                    <td style={{ padding: '15px', display: 'flex', alignItems: 'center', gap: '15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
-                                        <img src={item.image} style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} />
-                                        <div style={{ fontWeight: 600 }}>{item.name}</div>
-                                    </td>
-                                    <td style={{ padding: '15px' }}>
-                                        <span style={{ padding: '4px 10px', background: '#e2e8f0', borderRadius: '20px', fontSize: '0.8rem' }}>
-                                            {categories.find(c => c.id === item.category_id)?.name || 'Uncategorized'}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '15px' }}>
-                                        {item.promo_price ? (
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.8rem' }}>₱{item.price}</span>
-                                                <span style={{ color: '#ef4444', fontWeight: 700 }}>₱{item.promo_price}</span>
+                                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No products found matching your criteria.</td></tr>
+                            ) : filteredItems.map(item => {
+                                const isLow = item.stock !== undefined && item.stock <= (item.low_stock_threshold || item.lowStockThreshold || 5);
+                                const isOut = item.out_of_stock || item.stock === 0;
+
+                                return (
+                                    <tr key={item.id} style={{ background: isOut ? '#fef2f2' : isLow ? '#fffbe6' : '#f8fafc' }}>
+                                        <td style={{ padding: '15px', display: 'flex', alignItems: 'center', gap: '15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
+                                            <img src={item.image} style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} />
+                                            <div>
+                                                <div style={{ fontWeight: 700 }}>{item.name}</div>
+                                                {item.min_order_note && <div style={{ fontSize: '0.75rem', color: 'var(--primary-dark)', fontWeight: 600 }}>{item.min_order_note}</div>}
                                             </div>
-                                        ) : <span style={{ fontWeight: 700 }}>₱{item.price}</span>}
-                                    </td>
-                                    <td style={{ padding: '15px', borderTopRightRadius: '12px', borderBottomRightRadius: '12px' }}>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <button onClick={() => moveItem(item.id, 'up')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Move Up"><ChevronUp size={18} /></button>
-                                            <button onClick={() => moveItem(item.id, 'down')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Move Down"><ChevronDown size={18} /></button>
-                                            <button onClick={() => setEditingItem(item)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--primary)' }} title="Edit"><Edit2 size={18} /></button>
-                                            <button onClick={() => deleteItem(item.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444' }} title="Delete"><Trash2 size={18} /></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                                        </td>
+                                        <td style={{ padding: '15px' }}>
+                                            <span style={{ padding: '4px 10px', background: '#e2e8f0', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                {categories.find(c => c.id === item.category_id)?.name || 'Uncategorized'}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '15px' }}>
+                                            {item.promo_price ? (
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.8rem' }}>₱{item.price}</span>
+                                                    <span style={{ color: '#ef4444', fontWeight: 700 }}>₱{item.promo_price}</span>
+                                                </div>
+                                            ) : <span style={{ fontWeight: 700 }}>₱{item.price} /{item.unit || 'kg'}</span>}
+                                        </td>
+                                        <td style={{ padding: '15px' }}>
+                                            <div style={{ fontWeight: 800, color: isOut ? '#dc2626' : isLow ? '#d97706' : '#059669', fontSize: '0.95rem' }}>
+                                                {item.stock !== undefined ? `${item.stock} ${item.unit || 'kg'}` : 'N/A'}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                Alert at ≤ {item.low_stock_threshold || item.lowStockThreshold || 5} {item.unit || 'kg'}
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '15px' }}>
+                                            {isOut ? (
+                                                <span style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 800 }}>Out of Stock</span>
+                                            ) : isLow ? (
+                                                <span style={{ background: '#fef3c7', color: '#92400e', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 800 }}>⚠️ Low Stock</span>
+                                            ) : (
+                                                <span style={{ background: '#dcfce7', color: '#166534', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 800 }}>In Stock</span>
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '15px', borderTopRightRadius: '12px', borderBottomRightRadius: '12px' }}>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <button onClick={() => moveItem(item.id, 'up')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Move Up"><ChevronUp size={18} /></button>
+                                                <button onClick={() => moveItem(item.id, 'down')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Move Down"><ChevronDown size={18} /></button>
+                                                <button onClick={() => setEditingItem(item)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--primary)' }} title="Edit Product & Inventory"><Edit2 size={18} /></button>
+                                                <button onClick={() => deleteItem(item.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444' }} title="Delete"><Trash2 size={18} /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -331,9 +389,23 @@ const AdminDashboard = () => {
                     <div style={{ display: 'grid', gap: '15px', marginBottom: '20px' }}>
                         <input name="name" defaultValue={editingItem.name} placeholder="Product Name" required style={inputStyle} />
                         <textarea name="description" defaultValue={editingItem.description} placeholder="Description" style={inputStyle} />
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                            <input name="price" type="number" defaultValue={editingItem.price} placeholder="Price" required style={inputStyle} />
-                            <input name="promoPrice" type="number" defaultValue={editingItem.promo_price} placeholder="Promo Price (Optional)" style={inputStyle} />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
+                            <div>
+                                <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Current Stock</label>
+                                <input name="stock" type="number" defaultValue={editingItem.stock ?? 20} placeholder="Stock Qty" required style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Low Stock Threshold Alert</label>
+                                <input name="lowStockThreshold" type="number" defaultValue={editingItem.low_stock_threshold || editingItem.lowStockThreshold || 5} placeholder="Alert Threshold" required style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Unit (kg, slab, box, sack)</label>
+                                <input name="unit" defaultValue={editingItem.unit || 'kg'} placeholder="e.g. kg, slab, box" required style={inputStyle} />
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Minimum Order Note / Tag (Optional)</label>
+                            <input name="minOrderNote" defaultValue={editingItem.min_order_note || editingItem.minOrderNote || ''} placeholder="e.g. Minimum 1 Slab, Wholesale min 1 box" style={inputStyle} />
                         </div>
                         <select name="categoryId" defaultValue={editingItem.category_id} style={inputStyle}>
                             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1236,12 +1308,12 @@ const AdminDashboard = () => {
             {/* Sidebar */}
             <aside style={{ width: '260px', background: 'var(--primary)', color: 'white', padding: '30px 20px', position: 'fixed', height: '100vh', boxShadow: '5px 0 15px rgba(0,0,0,0.1)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '50px', paddingLeft: '10px' }}>
-                    <Package size={28} color="var(--accent)" />
-                    <span style={{ fontSize: '1.4rem', fontWeight: 700, fontFamily: 'Playfair Display' }}>3J Dressed Chicken</span>
+                    <Package size={28} color="var(--secondary)" />
+                    <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'white' }}>Chilled & Frozen Hub</span>
                 </div>
 
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <SidebarItem icon={<List size={20} />} label="Menu Items" active={activeTab === 'menu'} onClick={() => setActiveTab('menu')} />
+                    <SidebarItem icon={<List size={20} />} label="Inventory & Products" active={activeTab === 'menu'} onClick={() => setActiveTab('menu')} />
                     <SidebarItem icon={<Tag size={20} />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
                     <SidebarItem icon={<ShoppingBag size={20} />} label="Orders" active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} />
                     <SidebarItem icon={<Settings size={20} />} label="Order Types" active={activeTab === 'orderTypes'} onClick={() => setActiveTab('orderTypes')} />

@@ -60,16 +60,16 @@ const Home = () => {
     ]);
     const [storeSettings, setStoreSettings] = useState({
         manual_status: 'auto',
-        open_time: '10:00',
-        close_time: '01:00',
-        store_name: '3J Dressed Chicken Store',
-        address: 'Magdalena, Laguna',
-        contact: '09123456789',
-        logo_url: '/logo.jpg',
+        open_time: '08:00',
+        close_time: '19:00',
+        store_name: 'Chilled And Frozen Hub',
+        address: 'Caltex Road, Banaba South, Batangas City',
+        contact: '09947246294 / 09949314800',
+        logo_url: '/logo.png',
         banner_images: [
-            '/hero-bg.jpg',
-            'https://images.unsplash.com/photo-1576618148400-f54bed99fcf8?auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1544025162-d76690b60943?auto=format&fit=crop&q=80'
+            'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&q=80'
         ]
     });
 
@@ -97,11 +97,10 @@ const Home = () => {
                         const parsed = JSON.parse(savedCats);
                         setCategories(parsed);
                         if (parsed.length > 0) setActiveCategory(parsed[0].id);
-                    } else {
-                        setCategories([{ id: 'fresh-chicken', name: 'Fresh Chicken' }, { id: 'frozen-goods', name: 'Frozen Goods' }, { id: 'marinated', name: 'Marinated Items' }]);
-                        setActiveCategory('fresh-chicken');
-                    }
+                    setCategories(initialCategories);
+                    if (initialCategories.length > 0) setActiveCategory(initialCategories[0].id);
                 }
+            }
 
                 // 2. Fetch Menu Items
                 const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
@@ -420,8 +419,8 @@ ${amountBreakdown}
 
 Thank you!`;
 
-        // Facebook Page ID for Messenger
-        const pageId = '61587544585902';
+        // Facebook Page ID or Username for Messenger
+        const pageId = 'chilledandfrozenhubmeatshop';
 
         // Step 1: Copy order details to clipboard FIRST (before opening Messenger)
         const copied = await copyToClipboard(message);
@@ -477,93 +476,70 @@ Thank you!`;
             <header className="app-header">
                 <div className="container header-container">
                     <Link to="/" className="brand">
-                        <img src={storeSettings.logo_url || "/logo.jpg"} alt="3J Logo" style={{ height: '60px' }} />
-                    </Link>
-
-                    <nav className="header-nav" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                        <div style={{ display: 'flex', gap: '20px' }}>
-                            <Link to="/contact" className="nav-link">Contact</Link>
+                        <img src={storeSettings.logo_url || '/logo.png'} alt="Chilled And Frozen Hub Logo" />
+                        <div className="brand-text">
+                            <span className="brand-name">Chilled And Frozen Hub</span>
+                            <span className="brand-sub">Trader · Supplier · Distributor</span>
                         </div>
-                        <button className="btn-accent" onClick={() => setIsCartOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <ShoppingBag size={18} />
+                    </Link>
+                    <div className="header-nav">
+                        <button className="btn-accent" onClick={() => setIsCartOpen(true)}>
+                            <ShoppingBag size={16} />
                             <span>Cart ({cartCount})</span>
                         </button>
-                    </nav>
+                    </div>
                 </div>
             </header>
 
-            {/* Category Slider - Blended with Header */}
-            <div style={{
-                background: '#000000',
-                padding: '12px 0',
-                position: 'sticky',
-                top: '70px',
-                zIndex: 90,
-                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                overflowX: 'auto',
-                whiteSpace: 'nowrap',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-                display: 'block'
-            }} className="category-slider">
-                <style>{`
-                    .category-slider::-webkit-scrollbar { display: none; }
-                    .category-container {
-                        display: inline-flex;
-                        gap: 12px;
-                        padding: 0 20px;
-                        min-width: 100%;
-                        justify-content: center;
-                    }
-                    @media (max-width: 768px) {
-                        .category-container { justify-content: flex-start; }
-                    }
-                `}</style>
+            {/* Category Navigation Bar */}
+            <div className="category-slider">
                 <div className="category-container">
                     {categories.map(cat => (
-                        <button key={cat.id} className={activeCategory === cat.id ? 'btn-primary' : ''}
-                            style={{
-                                background: activeCategory === cat.id ? 'var(--gradient-red)' : 'rgba(255, 255, 255, 0.05)',
-                                color: activeCategory === cat.id ? 'white' : 'rgba(255, 255, 255, 0.7)',
-                                border: `1px solid ${activeCategory === cat.id ? 'var(--gold)' : 'rgba(255, 255, 255, 0.2)'}`,
-                                borderRadius: '30px', padding: '8px 24px',
-                                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                fontWeight: 700,
-                                flexShrink: 0,
-                                boxShadow: activeCategory === cat.id ? '0 4px 12px rgba(203, 32, 39, 0.3)' : 'none',
-                                cursor: 'pointer'
-                            }}
+                        <button
+                            key={cat.id}
+                            className={`cat-btn${activeCategory === cat.id ? ' active' : ''}`}
                             onClick={() => {
                                 setActiveCategory(cat.id);
-                                document.getElementById('menu').scrollIntoView({ behavior: 'smooth' });
+                                const el = document.getElementById(`cat-${cat.id}`);
+                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }}
-                        >{cat.name}</button>
+                        >
+                            {cat.name}
+                        </button>
                     ))}
                 </div>
             </div>
 
             {/* Hero Section */}
-            <section className="hero-section" style={{ overflow: 'hidden' }}>
+            <section className="hero-section" style={{ overflow: 'hidden', background: '#F4F9F4' }}>
                 <div className="container hero-split">
                     <div className="hero-content animate-fade-up">
-                        <h1 style={{ fontFamily: 'Outfit, sans-serif', color: 'var(--accent)', fontWeight: 900, fontSize: '4rem', textTransform: 'uppercase', marginBottom: '10px' }}>
-                            Freshly Dressed <span style={{ color: 'var(--primary)' }}>Chicken</span>
+                        <span style={{
+                            background: 'var(--secondary)',
+                            color: 'var(--primary-dark)',
+                            padding: '6px 16px',
+                            borderRadius: '20px',
+                            fontWeight: 800,
+                            fontSize: '0.85rem',
+                            display: 'inline-block',
+                            marginBottom: '15px'
+                        }}>
+                            TRADER • SUPPLIER • DISTRIBUTOR
+                        </span>
+                        <h1 style={{ fontFamily: 'Outfit, sans-serif', color: 'var(--accent)', fontWeight: 900, textTransform: 'uppercase', marginBottom: '10px', lineHeight: 1.1 }}>
+                            CHILLED AND <span style={{ color: 'var(--primary)' }}>FROZEN</span> HUB
                         </h1>
                         <p style={{
-                            fontFamily: 'Playfair Display, serif',
-                            fontSize: '1.5rem',
-                            color: 'var(--primary)',
+                            color: 'var(--primary-dark)',
                             fontWeight: 700,
-                            fontStyle: 'italic',
-                            marginBottom: '30px',
-                            letterSpacing: '1px'
+                            marginBottom: '20px'
                         }}>
-                            "Matinlo kag Garantisado"
+                            High-End Beef • Wholesale Chicken • Pork • Seafood • Rice
                         </p>
-                        <p style={{ fontSize: '1.2rem', color: 'var(--text-muted)', marginBottom: '40px' }}>
-                            Experience the best quality, freshness, and the best value for your family.
+                        <p style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '30px' }}>
+                            📍 Caltex Road, Banaba South, Batangas City<br />
+                            ☎️ Hotline: 09947246294 / 09949314800
                         </p>
-                        {/* Explore Menu button removed */}
                     </div>
                     <div className="hero-image-container">
                         {(storeSettings.banner_images || []).map((url, i) => (
@@ -588,98 +564,250 @@ Thank you!`;
                 </div>
             </section>
 
-            <main className="container" id="menu" style={{ padding: '60px 0' }}>
+            {/* ── All Menu Items grouped by Category ── */}
+            <main className="container menu-section" id="menu">
 
-                <div className="menu-grid">
-                    {isLoading ? (
-                        // Skeleton Loading UI
-                        Array(8).fill(0).map((_, i) => (
-                            <div key={i} className="menu-item-card animate-pulse" style={{ height: '350px', border: '1px solid #e5e7eb' }}>
-                                <div style={{ height: '200px', background: '#e5e7eb', width: '100%' }}></div>
-                                <div style={{ padding: '15px' }}>
-                                    <div style={{ height: '20px', background: '#e5e7eb', marginBottom: '10px', borderRadius: '4px', width: '80%' }}></div>
-                                    <div style={{ height: '16px', background: '#e5e7eb', marginBottom: '20px', borderRadius: '4px', width: '100%' }}></div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                                        <div style={{ height: '24px', background: '#e5e7eb', width: '30%', borderRadius: '4px' }}></div>
-                                        <div style={{ height: '32px', background: '#e5e7eb', width: '40%', borderRadius: '20px' }}></div>
-                                    </div>
+                {isLoading ? (
+                    // Skeleton grid
+                    <div className="menu-grid" style={{ marginTop: '20px' }}>
+                        {Array(8).fill(0).map((_, i) => (
+                            <div key={i} className="menu-item-card" style={{ border: '1px solid #e5e7eb' }}>
+                                <div className="skeleton" style={{ height: '140px', width: '100%', borderRadius: '0' }} />
+                                <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div className="skeleton" style={{ height: '16px', width: '80%' }} />
+                                    <div className="skeleton" style={{ height: '12px', width: '100%' }} />
+                                    <div className="skeleton" style={{ height: '30px', width: '100%', borderRadius: '8px' }} />
                                 </div>
                             </div>
-                        ))
-                    ) : (
-                        items.filter(item => item.category_id === activeCategory).map(item => (
-                            <div className="menu-item-card" key={item.id} style={{ opacity: item.out_of_stock ? 0.6 : 1 }}>
-                                <div style={{ position: 'relative' }}>
-                                    <img src={item.image} alt={item.name} className="menu-item-image" />
-                                    {item.promo_price && <span style={{ position: 'absolute', top: '10px', left: '10px', background: '#ef4444', color: 'white', padding: '4px 10px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 800 }}>PROMO</span>}
-                                    {item.out_of_stock && <span style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, borderRadius: '20px' }}>OUT OF STOCK</span>}
-                                </div>
-                                <div className="menu-item-info">
-                                    <h3 className="menu-item-name">{item.name}</h3>
-                                    <p className="menu-item-desc">{item.description}</p>
-                                    <div className="menu-item-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                            {item.promo_price ? (
-                                                <>
-                                                    <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.8rem' }}>₱{item.price}</span>
-                                                    <span className="menu-item-price" style={{ color: '#ef4444' }}>₱{item.promo_price}</span>
-                                                </>
-                                            ) : (
-                                                <span className="menu-item-price">₱{item.price}</span>
-                                            )}
-                                        </div>
-                                        <button
-                                            className="btn-success btn-sm"
-                                            disabled={item.out_of_stock || !isOpen}
-                                            onClick={() => openProductSelection(item)}
-                                            style={{
-                                                opacity: (item.out_of_stock || !isOpen) ? 0.5 : 1,
-                                                background: '#22c55e',
-                                                color: 'white',
-                                                border: 'none',
-                                                padding: '10px',
-                                                borderRadius: '12px',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                                width: '100%',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}
-                                        >
-                                            <Plus size={14} style={{ marginRight: '5px' }} /> Add to Cart
-                                        </button>
+                        ))}
+                    </div>
+                ) : (
+                    <>
+                        {categories.map(cat => {
+                            const isItemInCategory = (item, category) => {
+                                if (!item || !category) return false;
+                                const itemCat = item.category_id || item.categoryId;
+                                if (itemCat === category.id || String(itemCat) === String(category.id)) return true;
+
+                                const getSlug = (val) => {
+                                    if (!val) return '';
+                                    const s = String(val).toLowerCase();
+                                    if (s.includes('high end beef') || s.includes('high-end-beef')) return 'high-end-beef';
+                                    if (s.includes('chicken wholesale') || s.includes('chicken-wholesale')) return 'chicken-wholesale';
+                                    if (s.includes('beef wholesale') || s.includes('beef-wholesale')) return 'beef-wholesale';
+                                    if (s.includes('pork wholesale') || s.includes('pork-wholesale')) return 'pork-wholesale';
+                                    if (s.includes('sides') || s.includes('seafood') || s.includes('sides-others')) return 'sides-others';
+                                    if (s.includes('rice')) return 'rice';
+                                    return s.replace(/[^a-z0-9]/g, '');
+                                };
+
+                                const catSlug = getSlug(category.id) || getSlug(category.name);
+                                const itemSlug = getSlug(itemCat) || getSlug(item.category_name);
+
+                                return Boolean(catSlug && itemSlug && catSlug === itemSlug);
+                            };
+
+                            const catItems = items.filter(item => isItemInCategory(item, cat));
+                            if (catItems.length === 0) return null;
+                            return (
+                                <div key={cat.id} id={`cat-${cat.id}`}>
+                                    {/* Category Section Heading */}
+                                    <div className="menu-category-heading">
+                                        <h2>{cat.name}</h2>
+                                        <span className="menu-category-badge">{catItems.length} item{catItems.length !== 1 ? 's' : ''}</span>
+                                    </div>
+
+                                    {/* Items Grid */}
+                                    <div className="menu-grid">
+                                        {catItems.map(item => (
+                                            <div className="menu-item-card" key={item.id}
+                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1, position: 'relative' }}
+                                            >
+                                                <div style={{ position: 'relative' }}>
+                                                    <img src={item.image} alt={item.name} className="menu-item-image" />
+                                                    {item.min_order_note && (
+                                                        <span style={{ position: 'absolute', top: '6px', left: '6px', background: 'var(--primary)', color: 'white', padding: '3px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
+                                                            {item.min_order_note}
+                                                        </span>
+                                                    )}
+                                                    {item.stock !== undefined && item.stock > 0 && item.stock <= (item.low_stock_threshold || 5) && (
+                                                        <span style={{ position: 'absolute', top: '6px', right: '6px', background: '#dc2626', color: 'white', padding: '3px 7px', borderRadius: '20px', fontSize: '0.62rem', fontWeight: 800 }}>
+                                                            ⚠️ Low
+                                                        </span>
+                                                    )}
+                                                    {(item.out_of_stock || item.stock === 0) && (
+                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '0.5px' }}>
+                                                            OUT OF STOCK
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="menu-item-info">
+                                                    <h3 className="menu-item-name">{item.name}</h3>
+                                                    <p className="menu-item-desc">{item.description}</p>
+                                                    <div style={{ marginTop: 'auto' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                            <div>
+                                                                {item.promo_price ? (
+                                                                    <>
+                                                                        <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.7rem', marginRight: '3px' }}>₱{item.price}</span>
+                                                                        <span className="menu-item-price" style={{ color: '#dc2626' }}>₱{item.promo_price}</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <span className="menu-item-price">₱{item.price}</span>
+                                                                )}
+                                                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: '2px' }}>/{item.unit || 'kg'}</span>
+                                                            </div>
+                                                            {item.stock !== undefined && item.stock > 0 && (
+                                                                <span style={{ fontSize: '0.68rem', color: item.stock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
+                                                                    Stk:{item.stock}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <button
+                                                            className="btn-success"
+                                                            disabled={item.out_of_stock || item.stock === 0 || !isOpen}
+                                                            onClick={() => openProductSelection(item)}
+                                                        >
+                                                            <Plus size={13} /> Add to Order
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                            </div>
-                        ))
-                    )}
-                </div>
+                            );
+                        })}
+
+                        {/* Orphan items fallback */}
+                        {(() => {
+                            const orphanItems = items.filter(item => {
+                                const isItemInCategory = (it, category) => {
+                                    if (!it || !category) return false;
+                                    const itemCat = it.category_id || it.categoryId;
+                                    if (itemCat === category.id || String(itemCat) === String(category.id)) return true;
+
+                                    const getSlug = (val) => {
+                                        if (!val) return '';
+                                        const s = String(val).toLowerCase();
+                                        if (s.includes('high end beef') || s.includes('high-end-beef')) return 'high-end-beef';
+                                        if (s.includes('chicken wholesale') || s.includes('chicken-wholesale')) return 'chicken-wholesale';
+                                        if (s.includes('beef wholesale') || s.includes('beef-wholesale')) return 'beef-wholesale';
+                                        if (s.includes('pork wholesale') || s.includes('pork-wholesale')) return 'pork-wholesale';
+                                        if (s.includes('sides') || s.includes('seafood') || s.includes('sides-others')) return 'sides-others';
+                                        if (s.includes('rice')) return 'rice';
+                                        return s.replace(/[^a-z0-9]/g, '');
+                                    };
+
+                                    const catSlug = getSlug(category.id) || getSlug(category.name);
+                                    const itemSlug = getSlug(itemCat) || getSlug(it.category_name);
+                                    return Boolean(catSlug && itemSlug && catSlug === itemSlug);
+                                };
+
+                                return !categories.some(cat => isItemInCategory(item, cat));
+                            });
+                            if (orphanItems.length === 0) return null;
+                            return (
+                                <div id="cat-other">
+                                    <div className="menu-category-heading">
+                                        <h2>Other Premium Selections</h2>
+                                        <span className="menu-category-badge">{orphanItems.length} item{orphanItems.length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    <div className="menu-grid">
+                                        {orphanItems.map(item => (
+                                            <div className="menu-item-card" key={item.id}
+                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1, position: 'relative' }}
+                                            >
+                                                <div style={{ position: 'relative' }}>
+                                                    <img src={item.image} alt={item.name} className="menu-item-image" />
+                                                    {item.min_order_note && (
+                                                        <span style={{ position: 'absolute', top: '6px', left: '6px', background: 'var(--primary)', color: 'white', padding: '3px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
+                                                            {item.min_order_note}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="menu-item-info">
+                                                    <h3 className="menu-item-name">{item.name}</h3>
+                                                    <p className="menu-item-desc">{item.description}</p>
+                                                    <div style={{ marginTop: 'auto' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                            <span className="menu-item-price">₱{item.price}</span>
+                                                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>/{item.unit || 'kg'}</span>
+                                                        </div>
+                                                        <button
+                                                            className="btn-success"
+                                                            disabled={item.out_of_stock || item.stock === 0 || !isOpen}
+                                                            onClick={() => openProductSelection(item)}
+                                                        >
+                                                            <Plus size={13} /> Add to Order
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </>
+                )}
             </main>
 
             {/* Footer */}
-            <footer style={{ background: '#000000', color: 'white', padding: '60px 0 30px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                <div className="container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '30px' }}>
-                    <div style={{ textAlign: 'center' }}>
-                        <img src={storeSettings.logo_url || "/logo.jpg"} alt="3J Logo" style={{ height: '80px', marginBottom: '20px', borderRadius: '50%' }} />
-                        <h3 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.5rem', color: 'var(--gold)', margin: '0 0 10px' }}>{storeSettings.store_name}</h3>
-                        <p style={{ color: 'rgba(255,255,255,0.6)', maxWidth: '400px', margin: '0 auto', fontSize: '0.9rem' }}>
-                            "Matinlo kag Garantisado" - Providing the freshest quality chicken for your family.
-                        </p>
+            <footer className="app-footer">
+                <div className="container">
+                    <div className="footer-grid">
+                        {/* Brand Column */}
+                        <div className="footer-brand">
+                            <div className="footer-logo-row">
+                                <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" className="footer-logo-img" />
+                                <div>
+                                    <h3 className="footer-brand-title">{storeSettings.store_name}</h3>
+                                    <span className="footer-brand-sub">Trader • Supplier • Distributor</span>
+                                </div>
+                            </div>
+                            <p className="footer-desc">
+                                Premium quality meat wholesale & retail shop. Clean, fresh, guaranteed quality meats delivered to your doorstep.
+                            </p>
+                        </div>
+
+                        {/* Contact Column */}
+                        <div>
+                            <h4 className="footer-col-title">Store Information</h4>
+                            <ul className="footer-contact-list">
+                                <li className="footer-contact-item">
+                                    <MapPin size={16} color="var(--gold)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                    <span>{storeSettings.address}</span>
+                                </li>
+                                <li className="footer-contact-item">
+                                    <Phone size={16} color="var(--gold)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                    <span>{storeSettings.contact}</span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        {/* Business Hours & Socials */}
+                        <div>
+                            <h4 className="footer-col-title">Business Hours</h4>
+                            <ul className="footer-contact-list" style={{ marginBottom: '14px' }}>
+                                <li className="footer-contact-item">
+                                    <Clock size={16} color="var(--gold)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                    <span>Mon - Sun: {storeSettings.open_time || '08:00'} - {storeSettings.close_time || '19:00'}</span>
+                                </li>
+                            </ul>
+                            <h4 className="footer-col-title" style={{ fontSize: '0.8rem', marginBottom: '8px' }}>Connect With Us</h4>
+                            <div className="footer-social-row">
+                                <a href="https://facebook.com/chilledandfrozenhubmeatshop" target="_blank" rel="noreferrer" className="footer-social-link" title="Facebook Page">
+                                    <Facebook size={18} />
+                                </a>
+                                <a href={`tel:${storeSettings.contact}`} className="footer-social-link" title="Call Store">
+                                    <Phone size={18} />
+                                </a>
+                            </div>
+                        </div>
                     </div>
 
-
-
-                    <div style={{ display: 'flex', gap: '20px' }}>
-                        <a href="https://facebook.com/3jdressedchicken" target="_blank" rel="noreferrer" style={{ color: 'rgba(255,255,255,0.6)', transition: 'color 0.3s' }}>
-                            <Facebook size={24} />
-                        </a>
-                        <a href={`tel:${storeSettings.contact}`} style={{ color: 'rgba(255,255,255,0.6)', transition: 'color 0.3s' }}>
-                            <Phone size={24} />
-                        </a>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', width: '100%', paddingTop: '30px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem' }}>
+                    <div className="footer-bottom">
                         <p>© {new Date().getFullYear()} {storeSettings.store_name}. All rights reserved.</p>
                     </div>
                 </div>
@@ -1036,9 +1164,9 @@ Thank you!`;
                 </div>
             )}
 
-            {/* Same Cart Sidebar as before */}
+            {/* Cart Sidebar */}
             {isCartOpen && (
-                <div style={{ position: 'fixed', top: 0, right: 0, width: '450px', height: '100vh', background: 'white', boxShadow: '-10px 0 30px rgba(0,0,0,0.1)', zIndex: 1100, padding: '30px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ position: 'fixed', top: 0, right: 0, width: '100%', maxWidth: '450px', height: '100vh', background: 'white', boxShadow: '-10px 0 30px rgba(0,0,0,0.15)', zIndex: 1100, padding: '20px', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}><h2>Your Cart</h2><button onClick={() => setIsCartOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} /></button></div>
                     <div style={{ flex: 1, overflowY: 'auto' }}>
                         {cart.map(item => (

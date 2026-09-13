@@ -13,7 +13,7 @@ export const AuthProvider = ({ children }) => {
         // Check for developer bypass session first
         const bypassUser = localStorage.getItem('admin_bypass');
         if (bypassUser) {
-            setCurrentUser({ email: 'admin@3jdressedchicken.com', id: 'bypass-id' });
+            setCurrentUser({ email: 'admin@chilledandfrozenhub.com', id: 'bypass-id' });
             setLoading(false);
         }
 
