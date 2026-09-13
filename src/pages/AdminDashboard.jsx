@@ -40,9 +40,17 @@ const AdminDashboard = () => {
     const [message, setMessage] = useState('');
 
     // --- STATE MANAGEMENT ---
+    const normalizeItem = (item) => ({
+        ...item,
+        category_id: item.category_id || item.categoryId || '',
+        low_stock_threshold: item.low_stock_threshold ?? item.lowStockThreshold ?? 5,
+        min_order_note: item.min_order_note || item.minOrderNote || '',
+    });
+
     const [items, setItems] = useState(() => {
         const saved = localStorage.getItem('menuItems');
-        return saved ? JSON.parse(saved) : initialItems;
+        const raw = saved ? JSON.parse(saved) : initialItems;
+        return Array.isArray(raw) ? raw.map(normalizeItem) : raw;
     });
 
     const [categories, setCategories] = useState(() => {
@@ -145,21 +153,12 @@ const AdminDashboard = () => {
             try {
                 const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
                 if (catData && catData.length > 0) {
-                    const unique = [];
-                    const seen = new Set();
-                    for (const c of catData) {
-                        const key = (c.id || c.name || '').toLowerCase().trim();
-                        if (!seen.has(key)) {
-                            seen.add(key);
-                            unique.push(c);
-                        }
-                    }
-                    setCategories(unique);
-                    localStorage.setItem('categories', JSON.stringify(unique));
+                    setCategories(catData);
+                    localStorage.setItem('categories', JSON.stringify(catData));
                 }
 
                 const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
-                if (itemData && itemData.length > 0) setItems(itemData);
+                if (itemData && itemData.length > 0) setItems(itemData.map(normalizeItem));
 
                 const { data: payData } = await supabase.from('payment_settings').select('*');
                 if (payData && payData.length > 0) {
@@ -184,13 +183,19 @@ const AdminDashboard = () => {
                 }
 
                 const { data: typeData } = await supabase.from('order_types').select('*');
-                if (typeData && typeData.length > 0) setOrderTypes(typeData);
+                if (typeData && typeData.length > 0) {
+                    setOrderTypes(typeData);
+                    localStorage.setItem('orderTypes', JSON.stringify(typeData));
+                }
 
                 const { data: storeData } = await supabase.from('store_settings').select('*').limit(1).single();
                 if (storeData) setStoreSettings(storeData);
 
                 const { data: orderData } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
-                if (orderData && orderData.length > 0) setOrders(orderData);
+                if (orderData && orderData.length > 0) {
+                    setOrders(orderData);
+                    localStorage.setItem('orders', JSON.stringify(orderData));
+                }
             } catch (err) {
                 console.error('Error fetching admin data:', err);
             }
@@ -203,8 +208,9 @@ const AdminDashboard = () => {
         setTimeout(() => setMessage(''), 3500);
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         localStorage.removeItem('admin_bypass');
+        await supabase.auth.signOut();
         navigate('/admin');
     };
 
@@ -675,7 +681,7 @@ const AdminDashboard = () => {
                                         <tr key={item.id} style={{ background: isOut ? '#fff1f2' : isLow ? '#fffbeb' : '#f8fafc', transition: 'all 0.2s' }}>
                                             <td style={{ padding: '12px 15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                    <img src={item.image} style={{ width: '42px', height: '42px', borderRadius: '8px', objectFit: 'cover' }} alt="" />
+                                                    <img src={item.image} style={{ width: '42px', height: '42px', borderRadius: '8px', objectFit: 'cover' }} alt="" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                                                     <div>
                                                         <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>{item.name}</div>
                                                         <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Unit: {stockData.unit} · ₱{item.price}{item.promo_price ? ` → ₱${item.promo_price}` : ''}</span>
@@ -883,7 +889,7 @@ const AdminDashboard = () => {
                                 <tr key={item.id} style={{ background: '#f8fafc' }}>
                                     <td style={{ padding: '12px 15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <img src={item.image} style={{ width: '45px', height: '45px', borderRadius: '10px', objectFit: 'cover' }} alt="" />
+                                            <img src={item.image} style={{ width: '45px', height: '45px', borderRadius: '10px', objectFit: 'cover' }} alt="" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                                             <div>
                                                 <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>{item.name}</div>
                                                 <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.description || 'No description'}</div>
@@ -1044,7 +1050,7 @@ const AdminDashboard = () => {
         };
 
         const deleteCat = async (id) => {
-            if (window.confirm('Delete category? Products under this category might lose their link.')) {
+            if (window.confirm('⚠️ WARNING: Deleting this category will PERMANENTLY DELETE all products inside it. This cannot be undone. Continue?')) {
                 const { error } = await supabase.from('categories').delete().eq('id', id);
                 if (error) { showMessage(`Error: ${error.message}`); return; }
                 setCategories(categories.filter(c => c.id !== id));
@@ -1394,14 +1400,21 @@ const AdminDashboard = () => {
     const PaymentSettings = () => {
         const [isModalOpen, setIsModalOpen] = useState(false);
         const [editingMethod, setEditingMethod] = useState(null);
+        const [isUploadingQR, setIsUploadingQR] = useState(false);
         const [formData, setFormData] = useState({
             id: '',
             name: '',
             account_number: '',
             account_name: '',
             instructions: '',
+            qr_url: '',
             is_active: true
         });
+
+        const isCashMethod = (name) => {
+            const lower = (name || '').toLowerCase();
+            return lower.includes('cash') || lower.includes('cod');
+        };
 
         const openAddModal = () => {
             setEditingMethod(null);
@@ -1411,6 +1424,7 @@ const AdminDashboard = () => {
                 account_number: '',
                 account_name: '',
                 instructions: '',
+                qr_url: '',
                 is_active: true
             });
             setIsModalOpen(true);
@@ -1424,9 +1438,48 @@ const AdminDashboard = () => {
                 account_number: method.account_number || method.accountNumber || '',
                 account_name: method.account_name || method.accountName || '',
                 instructions: method.instructions || '',
+                qr_url: method.qr_url || '',
                 is_active: method.is_active !== undefined ? method.is_active : true
             });
             setIsModalOpen(true);
+        };
+
+        const handleQRUpload = async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setIsUploadingQR(true);
+            try {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `qr_${formData.id}_${Date.now()}.${fileExt}`;
+                const filePath = `qr-codes/${fileName}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('products')
+                    .upload(filePath, file);
+
+                if (uploadError) {
+                    // Fallback to base64 data URL if bucket isn't configured
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setFormData(prev => ({ ...prev, qr_url: reader.result }));
+                        setIsUploadingQR(false);
+                        showMessage('📎 QR code loaded (local).');
+                    };
+                    reader.readAsDataURL(file);
+                    return;
+                }
+
+                const { data } = supabase.storage.from('products').getPublicUrl(filePath);
+                if (data?.publicUrl) {
+                    setFormData(prev => ({ ...prev, qr_url: data.publicUrl }));
+                    showMessage('✅ QR code uploaded!');
+                }
+            } catch (err) {
+                console.error(err);
+                showMessage('Error uploading QR code.');
+            } finally {
+                setIsUploadingQR(false);
+            }
         };
 
         const handleSaveMethod = async (e) => {
@@ -1436,32 +1489,51 @@ const AdminDashboard = () => {
                 return;
             }
 
-            const updatedMethod = {
-                id: formData.id,
+            const methodPayload = {
                 name: formData.name.trim(),
                 account_number: formData.account_number.trim() || 'N/A',
                 account_name: formData.account_name.trim() || 'N/A',
                 instructions: formData.instructions.trim(),
+                qr_url: isCashMethod(formData.name) ? null : (formData.qr_url || null),
                 is_active: formData.is_active
             };
 
-            let updatedList = [];
-            if (editingMethod) {
-                updatedList = paymentSettings.map(p => p.id === formData.id ? updatedMethod : p);
-            } else {
-                updatedList = [...paymentSettings, updatedMethod];
-            }
-
-            // Sync to state & localstorage
-            setPaymentSettings(updatedList);
-            localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
-
-            // Sync to Supabase
             try {
-                const { error } = await supabase.from('payment_settings').upsert([updatedMethod]);
-                if (error) console.log('Supabase payment sync notice:', error.message);
+                if (editingMethod && editingMethod.id) {
+                    // UPDATE existing row using its real UUID
+                    const { data, error } = await supabase
+                        .from('payment_settings')
+                        .update(methodPayload)
+                        .eq('id', editingMethod.id)
+                        .select()
+                        .single();
+                    if (error) throw error;
+                    const saved = data || { ...methodPayload, id: editingMethod.id };
+                    const updatedList = paymentSettings.map(p => p.id === editingMethod.id ? saved : p);
+                    setPaymentSettings(updatedList);
+                    localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
+                } else {
+                    // INSERT new row — let Supabase generate the UUID
+                    const { data, error } = await supabase
+                        .from('payment_settings')
+                        .insert([methodPayload])
+                        .select()
+                        .single();
+                    if (error) throw error;
+                    const saved = data || { ...methodPayload, id: 'pay_' + Date.now() };
+                    const updatedList = [...paymentSettings, saved];
+                    setPaymentSettings(updatedList);
+                    localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
+                }
             } catch (err) {
-                console.log('Supabase sync error:', err);
+                console.log('Supabase payment sync error:', err);
+                // Fallback: update local state only so the UI still reflects the change
+                const fallback = { ...methodPayload, id: editingMethod?.id || 'pay_' + Date.now() };
+                const updatedList = editingMethod
+                    ? paymentSettings.map(p => p.id === editingMethod.id ? fallback : p)
+                    : [...paymentSettings, fallback];
+                setPaymentSettings(updatedList);
+                localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
             }
 
             showMessage(editingMethod ? '✅ Payment method updated!' : '🎉 New payment method added!');
@@ -1495,7 +1567,10 @@ const AdminDashboard = () => {
             localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
 
             try {
-                await supabase.from('payment_settings').upsert([updated]);
+                await supabase
+                    .from('payment_settings')
+                    .update({ is_active: updated.is_active })
+                    .eq('id', method.id);
             } catch (err) {
                 console.log('Supabase toggle error:', err);
             }
@@ -1557,7 +1632,7 @@ const AdminDashboard = () => {
                                     position: 'relative',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    justify: 'space-between'
+                                    justifyContent: 'space-between'
                                 }}
                             >
                                 <div>
@@ -1603,6 +1678,18 @@ const AdminDashboard = () => {
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* QR Code Thumbnail (non-cash only) */}
+                                    {p.qr_url && !((p.name || '').toLowerCase().includes('cash') || (p.name || '').toLowerCase().includes('cod')) && (
+                                        <div style={{ marginBottom: '14px', textAlign: 'center' }}>
+                                            <img
+                                                src={p.qr_url}
+                                                alt={`${p.name} QR Code`}
+                                                style={{ width: '90px', height: '90px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', padding: '4px' }}
+                                            />
+                                            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '4px' }}>QR Code</div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Bottom Action Buttons */}
@@ -1753,6 +1840,52 @@ const AdminDashboard = () => {
                                         />
                                     </div>
 
+                                    {/* QR Code Upload — hidden for Cash/COD methods */}
+                                    {!isCashMethod(formData.name) && (
+                                        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1.5px dashed #cbd5e1' }}>
+                                            <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '10px', color: '#334155' }}>
+                                                📱 QR Code Image
+                                            </label>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                                {/* Preview */}
+                                                <div style={{ width: '80px', height: '80px', borderRadius: '12px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #cbd5e1' }}>
+                                                    {formData.qr_url ? (
+                                                        <img src={formData.qr_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} alt="QR Preview" />
+                                                    ) : (
+                                                        <ImageIcon size={28} color="#94a3b8" />
+                                                    )}
+                                                </div>
+                                                {/* Upload controls */}
+                                                <div style={{ flex: 1 }}>
+                                                    <label style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: '7px',
+                                                        padding: '8px 16px', borderRadius: '10px',
+                                                        background: isUploadingQR ? '#e2e8f0' : '#0c250d',
+                                                        color: isUploadingQR ? '#64748b' : '#F9B700',
+                                                        fontWeight: 800, fontSize: '0.82rem', cursor: isUploadingQR ? 'not-allowed' : 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}>
+                                                        <Camera size={15} />
+                                                        {isUploadingQR ? 'Uploading…' : 'Upload QR Code'}
+                                                        <input type="file" accept="image/*" onChange={handleQRUpload} disabled={isUploadingQR} style={{ display: 'none' }} />
+                                                    </label>
+                                                    {formData.qr_url && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFormData(prev => ({ ...prev, qr_url: '' }))}
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginLeft: '8px', padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}
+                                                        >
+                                                            <X size={13} /> Remove
+                                                        </button>
+                                                    )}
+                                                    <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
+                                                        PNG or JPG. Shown to customers during checkout.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
                                         <input
                                             type="checkbox"
@@ -1873,7 +2006,6 @@ const AdminDashboard = () => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const settingsObj = {
-                id: storeSettings.id || 1,
                 store_name: formData.get('storeName'),
                 address: formData.get('address'),
                 contact: formData.get('contact'),
@@ -1884,12 +2016,31 @@ const AdminDashboard = () => {
                 banner_images: banners
             };
 
-            setStoreSettings(settingsObj);
-            localStorage.setItem('storeSettings', JSON.stringify(settingsObj));
+            const savedObj = { ...settingsObj, id: storeSettings.id };
+            setStoreSettings(savedObj);
+            localStorage.setItem('storeSettings', JSON.stringify(savedObj));
 
             try {
-                const { error } = await supabase.from('store_settings').upsert([settingsObj]);
-                if (error) console.log('Supabase settings notice:', error.message);
+                if (storeSettings.id) {
+                    // Update the existing row using its real UUID
+                    const { error } = await supabase
+                        .from('store_settings')
+                        .update(settingsObj)
+                        .eq('id', storeSettings.id);
+                    if (error) console.log('Supabase settings notice:', error.message);
+                } else {
+                    // No row yet — insert and capture the generated UUID
+                    const { data, error } = await supabase
+                        .from('store_settings')
+                        .insert([settingsObj])
+                        .select()
+                        .single();
+                    if (error) console.log('Supabase settings notice:', error.message);
+                    if (data) {
+                        setStoreSettings(data);
+                        localStorage.setItem('storeSettings', JSON.stringify(data));
+                    }
+                }
             } catch (err) {
                 console.log('Supabase sync notice:', err);
             }
@@ -2045,7 +2196,7 @@ const AdminDashboard = () => {
                                             padding: '10px 14px',
                                             background: 'white',
                                             display: 'flex',
-                                            justify: 'space-between',
+                                            justifyContent: 'space-between',
                                             alignItems: 'center',
                                             borderTop: '1px solid #e2e8f0'
                                         }}>
@@ -2125,11 +2276,11 @@ const AdminDashboard = () => {
                 zIndex: 100,
                 display: 'flex',
                 flexDirection: 'column',
-                justify: 'space-between'
+                justifyContent: 'space-between'
             }}>
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '36px', paddingLeft: '6px' }}>
-                        <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" style={{ height: '42px', width: '42px', borderRadius: '50%', border: '2px solid #F9B700', background: 'white', objectFit: 'cover' }} />
+                        <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" style={{ height: '42px', width: '42px', borderRadius: '50%', border: '2px solid #F9B700', background: 'white', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
                         <div>
                             <div style={{ fontSize: '1.02rem', fontWeight: 900, color: '#F9B700', lineHeight: 1.1 }}>Chilled & Frozen</div>
                             <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Admin Portal</span>
@@ -2142,7 +2293,11 @@ const AdminDashboard = () => {
                             label="Inventory & Stocks"
                             active={activeTab === 'inventory'}
                             onClick={() => setActiveTab('inventory')}
-                            badge={items.filter(i => i.out_of_stock || (i.stock !== undefined && i.stock <= (i.low_stock_threshold || 5))).length}
+                            badge={items.filter(i => {
+                                const s = i.stock ?? 0;
+                                const t = i.low_stock_threshold ?? i.lowStockThreshold ?? 5;
+                                return i.out_of_stock || s === 0 || s <= t;
+                            }).length}
                         />
                         <SidebarItem
                             icon={<Utensils size={18} />}
@@ -2232,7 +2387,7 @@ const AdminDashboard = () => {
                 {/* Top Header Bar */}
                 <header style={{
                     display: 'flex',
-                    justify: 'space-between',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     marginBottom: '28px',
                     background: 'white',

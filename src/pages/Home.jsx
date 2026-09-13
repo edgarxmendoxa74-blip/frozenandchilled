@@ -84,7 +84,8 @@ const Home = () => {
     const [paymentSettings, setPaymentSettings] = useState([]);
     const [orderTypes, setOrderTypes] = useState([
         { id: 'pickup', name: 'Pickup' },
-        { id: 'delivery', name: 'Delivery' }
+        { id: 'delivery', name: 'Delivery' },
+        { id: 'lalamove-delivery', name: 'Lalamove Delivery' }
     ]);
     const [storeSettings, setStoreSettings] = useState({
         manual_status: 'auto',
@@ -181,13 +182,15 @@ const Home = () => {
                 }
 
                 // 4. Fetch Order Types
+                const lalamoveType = { id: 'lalamove-delivery', name: 'Lalamove Delivery' };
                 const { data: typeData } = await supabase.from('order_types').select('*').eq('is_active', true);
                 if (typeData && typeData.length > 0) {
-                    setOrderTypes(deduplicateByKey(typeData));
+                    const merged = deduplicateByKey([...typeData, lalamoveType]);
+                    setOrderTypes(merged);
                 } else {
                     const savedOrderTypes = localStorage.getItem('orderTypes');
                     if (savedOrderTypes) {
-                        const parsed = deduplicateByKey(JSON.parse(savedOrderTypes));
+                        const parsed = deduplicateByKey([...JSON.parse(savedOrderTypes), lalamoveType]);
                         if (parsed.length > 0) setOrderTypes(parsed);
                     }
                 }
@@ -245,7 +248,8 @@ const Home = () => {
         address: '',
         landmark: '',
         pickup_time: '',
-        delivery_location: ''
+        delivery_location: '',
+        lalamove_note: ''
     });
 
     const openProductSelection = (item) => {
@@ -343,6 +347,7 @@ const Home = () => {
 
         if (orderType === 'pickup') customerInfoStr += `\nPhone: ${customerDetails.phone}\nPickup Time: ${customerDetails.pickup_time}`;
         if (orderType === 'delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nDelivery Location: ${customerDetails.delivery_location}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}`;
+        if (orderType === 'lalamove delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
 
         let totalBreakdown = `Subtotal: ₱${cartSubtotal}`;
         if (orderType === 'delivery' && deliveryCharge > 0) {
@@ -409,7 +414,7 @@ const Home = () => {
 
     const handlePlaceOrder = async () => {
         if (!orderType) {
-            alert('Please select an order type (Pickup or Delivery).');
+            alert('Please select an order type (Pickup, Delivery, or Lalamove Delivery).');
             return;
         }
 
@@ -418,6 +423,7 @@ const Home = () => {
 
         if (orderType === 'pickup' && (!name || !phone || !pickup_time)) { alert('Please provide Name, Phone Number, and Pickup Time.'); return; }
         if (orderType === 'delivery' && (!name || !phone || !delivery_location || !address)) { alert('Please provide Name, Phone Number, Delivery Location, and Address.'); return; }
+        if (orderType === 'lalamove delivery' && (!name || !phone || !address)) { alert('Please provide Name, Phone Number, and Complete Address for Lalamove Delivery.'); return; }
 
         if (!paymentMethod) { alert('Please select a payment method.'); return; }
 
@@ -459,6 +465,7 @@ const Home = () => {
 
         if (orderType === 'pickup') customerInfoStr += `\nPhone: ${customerDetails.phone}\nPickup Time: ${customerDetails.pickup_time}`;
         if (orderType === 'delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nDelivery Location: ${customerDetails.delivery_location}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}`;
+        if (orderType === 'lalamove delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
 
         let amountBreakdown = `Subtotal: ₱${cartSubtotal}`;
         if (orderType === 'delivery' && deliveryCharge > 0) {
@@ -491,10 +498,13 @@ Thank you!`;
         setIsCheckoutOpen(false);
 
         // Step 3: Show instruction to user
+        const lalamoveReminder = orderType === 'lalamove delivery'
+            ? '\n\n🛵 Lalamove Delivery reminder: After sending your order, the store will confirm your order first. Once confirmed, they will let you know the Lalamove delivery charge before you proceed with booking.'
+            : '';
         if (copied) {
-            alert('✅ Order details copied to clipboard!\n\nMessenger will open now. Just PASTE (long-press → Paste) your order in the chat and send it.');
+            alert(`✅ Order details copied to clipboard!\n\nMessenger will open now. Just PASTE (long-press → Paste) your order in the chat and send it.${lalamoveReminder}`);
         } else {
-            alert('⚠️ Could not copy automatically.\n\nMessenger will open now. Please type or describe your order in the chat.\n\nYou can also go back and use the "Copy Order Details" button to copy it manually.');
+            alert(`⚠️ Could not copy automatically.\n\nMessenger will open now. Please type or describe your order in the chat.\n\nYou can also go back and use the "Copy Order Details" button to copy it manually.${lalamoveReminder}`);
         }
 
         // Step 4: Open Messenger using the most reliable method for each platform
@@ -518,7 +528,7 @@ Thank you!`;
         // Clear cart after successful order
         setTimeout(() => {
             setCart([]);
-            setCustomerDetails({ name: '', phone: '', table_number: '', address: '', landmark: '', pickup_time: '', delivery_location: '' });
+            setCustomerDetails({ name: '', phone: '', table_number: '', address: '', landmark: '', pickup_time: '', delivery_location: '', lalamove_note: '' });
             setOrderType('');
             setPaymentMethod('');
         }, 1000);
@@ -538,7 +548,7 @@ Thank you!`;
             <header className="app-header">
                 <div className="container header-container">
                     <Link to="/" className="brand">
-                        <img src={storeSettings.logo_url || '/logo.png'} alt="Chilled And Frozen Hub Logo" />
+                        <img src={storeSettings.logo_url || '/logo.png'} alt="Chilled And Frozen Hub Logo" onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
                         <div className="brand-text">
                             <span className="brand-name">Chilled And Frozen Hub</span>
                             <span className="brand-sub">Trader · Supplier · Distributor</span>
@@ -610,6 +620,7 @@ Thank you!`;
                                 src={url}
                                 alt={`Hero Banner ${i + 1}`}
                                 className="hero-image"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                 style={{
                                     position: i === 0 ? 'relative' : 'absolute',
                                     top: 0,
@@ -686,7 +697,7 @@ Thank you!`;
                                                 style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1, position: 'relative' }}
                                             >
                                                 <div style={{ position: 'relative' }}>
-                                                    <img src={item.image} alt={item.name} className="menu-item-image" />
+                                                    <img src={item.image} alt={item.name} className="menu-item-image" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                                                     {item.min_order_note && (
                                                         <span style={{ position: 'absolute', top: '6px', left: '6px', background: 'var(--primary)', color: 'white', padding: '3px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
                                                             {item.min_order_note}
@@ -781,7 +792,7 @@ Thank you!`;
                                                 style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1, position: 'relative' }}
                                             >
                                                 <div style={{ position: 'relative' }}>
-                                                    <img src={item.image} alt={item.name} className="menu-item-image" />
+                                                    <img src={item.image} alt={item.name} className="menu-item-image" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                                                     {item.min_order_note && (
                                                         <span style={{ position: 'absolute', top: '6px', left: '6px', background: 'var(--primary)', color: 'white', padding: '3px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
                                                             {item.min_order_note}
@@ -822,7 +833,7 @@ Thank you!`;
                         {/* Brand Column */}
                         <div className="footer-brand">
                             <div className="footer-logo-row">
-                                <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" className="footer-logo-img" />
+                                <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" className="footer-logo-img" onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
                                 <div>
                                     <h3 className="footer-brand-title">{storeSettings.store_name}</h3>
                                     <span className="footer-brand-sub">Trader • Supplier • Distributor</span>
@@ -880,14 +891,38 @@ Thank you!`;
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                     <div style={{ background: 'white', maxWidth: '500px', width: '100%', borderRadius: '24px', padding: '30px', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
                         <button onClick={() => setSelectedProduct(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} /></button>
-                        <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
-                            <img src={selectedProduct.image} style={{ width: '100px', height: '100px', borderRadius: '12px', objectFit: 'cover' }} alt="" />
+                        <div style={{ display: 'flex', gap: '20px', marginBottom: '16px' }}>
+                            <img src={selectedProduct.image} style={{ width: '100px', height: '100px', borderRadius: '12px', objectFit: 'cover' }} alt="" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                             <div><h2 style={{ margin: 0 }}>{selectedProduct.name}</h2><p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{selectedProduct.description}</p></div>
                         </div>
 
+                        {/* Instruction banner – shown whenever there are weight/size variations */}
+                        {selectedProduct.variations && selectedProduct.variations.length > 0 && (
+                            <div style={{
+                                background: '#fffbeb',
+                                border: '1px solid #fcd34d',
+                                borderRadius: '12px',
+                                padding: '12px 14px',
+                                marginBottom: '20px',
+                                display: 'flex',
+                                gap: '10px',
+                                alignItems: 'flex-start'
+                            }}>
+                                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>📦</span>
+                                <div>
+                                    <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem', color: '#92400e' }}>
+                                        Pumili ng available na weight ng kahon (box) sa storage
+                                    </p>
+                                    <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#b45309', lineHeight: 1.4 }}>
+                                        Pakitingnan ang mga pagpipilian sa ibaba at piliin ang tamang bigat na available. Ang mga may label na <em>"Out of Stock"</em> ay hindi na available.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         {selectedProduct.variations && selectedProduct.variations.length > 0 && (
                             <div style={{ marginBottom: '20px' }}>
-                                <label style={{ fontWeight: 700, display: 'block', marginBottom: '10px' }}>Choose</label>
+                                <label style={{ fontWeight: 700, display: 'block', marginBottom: '10px' }}>Piliin ang Weight ng Box</label>
                                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                                     {selectedProduct.variations.map(v => (
                                         <button
@@ -1134,7 +1169,44 @@ Thank you!`;
                                                 </div>
                                             </>
                                         )}
-                                        {!['pickup', 'delivery'].includes(orderType) && <div><label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>Notes / Instructions</label><textarea value={customerDetails.landmark} onChange={(e) => setCustomerDetails({ ...customerDetails, landmark: e.target.value })} placeholder="Any specific requests..." style={{ padding: '12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} /></div>}
+                                        {!['pickup', 'delivery', 'lalamove delivery'].includes(orderType) && <div><label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>Notes / Instructions</label><textarea value={customerDetails.landmark} onChange={(e) => setCustomerDetails({ ...customerDetails, landmark: e.target.value })} placeholder="Any specific requests..." style={{ padding: '12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} /></div>}
+                                        {orderType === 'lalamove delivery' && (
+                                            <>
+                                                <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '10px', border: '1px solid #f59e0b', fontSize: '0.85rem', color: '#92400e' }}>
+                                                    🛵 <strong>Lalamove Delivery</strong> — Please arrange your own Lalamove booking. Provide your complete pick-up address when booking. Delivery fee is paid directly to Lalamove.
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>
+                                                        Complete Address <span style={{ color: '#ef4444' }}>*</span>
+                                                    </label>
+                                                    <textarea
+                                                        value={customerDetails.address}
+                                                        onChange={(e) => setCustomerDetails({ ...customerDetails, address: e.target.value })}
+                                                        placeholder="House/Lot No., Street, Subdivision, Barangay, City..."
+                                                        style={{ padding: '12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0', minHeight: '80px' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>Landmark (Optional)</label>
+                                                    <input
+                                                        type="text"
+                                                        value={customerDetails.landmark}
+                                                        onChange={(e) => setCustomerDetails({ ...customerDetails, landmark: e.target.value })}
+                                                        placeholder="Near school, beside sari-sari store, etc."
+                                                        style={{ padding: '12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>Additional Notes (Optional)</label>
+                                                    <textarea
+                                                        value={customerDetails.lalamove_note}
+                                                        onChange={(e) => setCustomerDetails({ ...customerDetails, lalamove_note: e.target.value })}
+                                                        placeholder="e.g. fragile items, call before delivery, gate code..."
+                                                        style={{ padding: '12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0', minHeight: '60px' }}
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -1226,7 +1298,7 @@ Thank you!`;
                     <div style={{ flex: 1, overflowY: 'auto' }}>
                         {cart.map(item => (
                             <div key={item.cartItemId} style={{ display: 'flex', gap: '15px', marginBottom: '20px', alignItems: 'flex-start' }}>
-                                <img src={item.image} alt={item.name} style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} />
+                                <img src={item.image} alt={item.name} style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                                 <div style={{ flex: 1 }}>
                                     <h4 style={{ margin: 0 }}>{item.name}</h4>
                                     <p style={{ margin: '2px 0 5px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>

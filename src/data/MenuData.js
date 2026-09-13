@@ -1,9 +1,10 @@
 export const categories = [
     { id: 'high-end-beef', name: 'High End Beef (Min 1 Slab)' },
-    { id: 'chicken-wholesale', name: 'Chicken Wholesale (Min 1 Box)' },
     { id: 'beef-wholesale', name: 'Beef Wholesale (Min 1 Box)' },
     { id: 'pork-wholesale', name: 'Pork Wholesale (Min 1 Box)' },
+    { id: 'chicken-wholesale', name: 'Chicken Wholesale (Min 1 Box)' },
     { id: 'sides-others', name: 'Sides & Seafood (Min 1 Box)' },
+    { id: 'ready-to-cook', name: 'Ready to Cook' },
     { id: 'rice', name: 'Rice (25kls)' },
 ];
 

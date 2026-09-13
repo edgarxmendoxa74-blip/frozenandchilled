@@ -62,7 +62,16 @@ CREATE TABLE IF NOT EXISTS payment_settings (
     account_number TEXT,
     account_name TEXT,
     qr_url TEXT,
+    instructions TEXT,
     is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5b. Delivery Locations Table
+CREATE TABLE IF NOT EXISTS delivery_locations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    charge INTEGER DEFAULT 35,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -112,11 +121,12 @@ ON CONFLICT DO NOTHING;
 -- Insert Categories
 INSERT INTO categories (name, sort_order) VALUES
 ('High End Beef (Min 1 Slab)', 1),
-('Chicken Wholesale (Min 1 Box)', 2),
-('Beef Wholesale (Min 1 Box)', 3),
-('Pork Wholesale (Min 1 Box)', 4),
+('Beef Wholesale (Min 1 Box)', 2),
+('Pork Wholesale (Min 1 Box)', 3),
+('Chicken Wholesale (Min 1 Box)', 4),
 ('Sides & Seafood (Min 1 Box)', 5),
-('Rice (25kls)', 6)
+('Ready to Cook', 6),
+('Rice (25kls)', 7)
 ON CONFLICT DO NOTHING;
 
 -- Insert Menu Items: High End Beef
@@ -173,6 +183,17 @@ INSERT INTO menu_items (category_id, name, description, price, unit, min_order_n
 ((SELECT id FROM categories WHERE name LIKE 'Rice%' LIMIT 1), 'Jasmine Rice 25kg', 'Aromatic Jasmine rice 25kg sack.', 1380.00, 'sack', '25kg Sack', 12, 3, 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80', 2)
 ON CONFLICT DO NOTHING;
 
+-- ============================================================================
+-- UPDATE CATEGORY SORT ORDER (Run this to fix ordering on existing databases)
+-- ============================================================================
+UPDATE categories SET sort_order = 1 WHERE name LIKE 'High End Beef%';
+UPDATE categories SET sort_order = 2 WHERE name LIKE 'Beef Wholesale%';
+UPDATE categories SET sort_order = 3 WHERE name LIKE 'Pork Wholesale%';
+UPDATE categories SET sort_order = 4 WHERE name LIKE 'Chicken Wholesale%';
+UPDATE categories SET sort_order = 5 WHERE name LIKE 'Sides%';
+UPDATE categories SET sort_order = 6 WHERE name LIKE 'Ready to Cook%';
+UPDATE categories SET sort_order = 7 WHERE name LIKE 'Rice%';
+
 -- CLEANUP SECTION (Uncomment to reset all data)
 -- DELETE FROM orders;
 -- DELETE FROM menu_items;
@@ -180,6 +201,20 @@ ON CONFLICT DO NOTHING;
 -- DELETE FROM payment_settings;
 -- DELETE FROM store_settings;
 -- DELETE FROM order_types;
+
+-- ============================================================================
+-- MIGRATION: Run these on existing databases to apply schema updates
+-- ============================================================================
+-- Add instructions column to payment_settings (if upgrading from older schema)
+ALTER TABLE payment_settings ADD COLUMN IF NOT EXISTS instructions TEXT;
+
+-- Add delivery_locations table (if upgrading from older schema)
+CREATE TABLE IF NOT EXISTS delivery_locations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    charge INTEGER DEFAULT 35,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
 
 -- ============================================================================
