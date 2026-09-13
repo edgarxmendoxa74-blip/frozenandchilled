@@ -53,6 +53,34 @@ const Home = () => {
     const [activeCategory, setActiveCategory] = useState('oysters'); // Will update after load
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+    const DEFAULT_DELIVERY_LOCATIONS = [
+        { id: 'loc_1', name: 'Poblacion', charge: 35 },
+        { id: 'loc_2', name: 'San Antonio', charge: 35 },
+        { id: 'loc_3', name: 'Mangorocoro', charge: 35 },
+        { id: 'loc_4', name: 'Progreso', charge: 35 },
+        { id: 'loc_5', name: 'Pili', charge: 35 },
+        { id: 'loc_6', name: 'Lanjagan', charge: 35 },
+        { id: 'loc_7', name: 'Taguhangin', charge: 35 },
+        { id: 'loc_8', name: 'Bugtong Bukid', charge: 35 },
+        { id: 'loc_9', name: 'Brgy. Rojas', charge: 35 },
+        { id: 'loc_10', name: 'Pinantan Elizalde', charge: 35 },
+        { id: 'loc_11', name: 'Puente Bunglas', charge: 35 },
+        { id: 'loc_12', name: 'Bat-os', charge: 35 },
+        { id: 'loc_13', name: 'Malayu-an', charge: 40 },
+        { id: 'loc_14', name: 'Barrido', charge: 40 },
+        { id: 'loc_15', name: 'Culasi', charge: 45 },
+        { id: 'loc_16', name: 'Luca', charge: 45 },
+        { id: 'loc_17', name: 'Bay-ang', charge: 50 }
+    ];
+
+    const [deliveryLocations, setDeliveryLocations] = useState(() => {
+        const saved = localStorage.getItem('deliveryLocations');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) {}
+        }
+        return DEFAULT_DELIVERY_LOCATIONS;
+    });
+
     const [paymentSettings, setPaymentSettings] = useState([]);
     const [orderTypes, setOrderTypes] = useState([
         { id: 'pickup', name: 'Pickup' },
@@ -81,6 +109,21 @@ const Home = () => {
 
     const isOpen = isStoreOpen();
 
+    // Helper to deduplicate array of objects by id or name
+    const deduplicateCategories = (arr) => {
+        if (!Array.isArray(arr)) return [];
+        const unique = [];
+        const seen = new Set();
+        for (const item of arr) {
+            const key = (item.id || item.name || '').toLowerCase().trim();
+            if (!seen.has(key)) {
+                seen.add(key);
+                unique.push(item);
+            }
+        }
+        return unique;
+    };
+
     // Load data from Supabase (with LocalStorage fallback)
     useEffect(() => {
         const fetchData = async () => {
@@ -89,18 +132,21 @@ const Home = () => {
                 // 1. Fetch Categories
                 const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
                 if (catData && catData.length > 0) {
-                    setCategories(catData);
-                    setActiveCategory(catData[0].id);
+                    const unique = deduplicateCategories(catData);
+                    setCategories(unique);
+                    if (unique.length > 0) setActiveCategory(unique[0].id);
                 } else {
                     const savedCats = localStorage.getItem('categories');
                     if (savedCats) {
-                        const parsed = JSON.parse(savedCats);
+                        const parsed = deduplicateCategories(JSON.parse(savedCats));
                         setCategories(parsed);
                         if (parsed.length > 0) setActiveCategory(parsed[0].id);
-                    setCategories(initialCategories);
-                    if (initialCategories.length > 0) setActiveCategory(initialCategories[0].id);
+                    } else {
+                        const defaultUnique = deduplicateCategories(initialCategories);
+                        setCategories(defaultUnique);
+                        if (defaultUnique.length > 0) setActiveCategory(defaultUnique[0].id);
+                    }
                 }
-            }
 
                 // 2. Fetch Menu Items
                 const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
@@ -119,7 +165,18 @@ const Home = () => {
                     const savedPayments = localStorage.getItem('paymentSettings');
                     if (savedPayments) {
                         const parsed = JSON.parse(savedPayments);
-                        setPaymentSettings(Array.isArray(parsed) ? parsed : []);
+                        setPaymentSettings(Array.isArray(parsed) ? parsed.filter(p => p.is_active !== false) : []);
+                    }
+                }
+
+                // 3b. Fetch Delivery Locations
+                const { data: locData } = await supabase.from('delivery_locations').select('*');
+                if (locData && locData.length > 0) {
+                    setDeliveryLocations(locData);
+                } else {
+                    const savedLocs = localStorage.getItem('deliveryLocations');
+                    if (savedLocs) {
+                        try { setDeliveryLocations(JSON.parse(savedLocs)); } catch (e) {}
                     }
                 }
 
@@ -263,7 +320,7 @@ const Home = () => {
 
     // Calculate delivery charge based on selected location
     const getDeliveryCharge = () => {
-        const selectedLocation = DELIVERY_LOCATIONS.find(loc => loc.name === customerDetails.delivery_location);
+        const selectedLocation = deliveryLocations.find(loc => loc.name === customerDetails.delivery_location);
         return selectedLocation ? selectedLocation.charge : 0;
     };
     const deliveryCharge = orderType === 'delivery' ? getDeliveryCharge() : 0;
@@ -1044,15 +1101,15 @@ Thank you!`;
                                                         }}
                                                     >
                                                         <option value="">-- Select Barangay --</option>
-                                                        {DELIVERY_LOCATIONS.map(loc => (
-                                                            <option key={loc.name} value={loc.name}>
+                                                        {deliveryLocations.map(loc => (
+                                                            <option key={loc.id || loc.name} value={loc.name}>
                                                                 {loc.name} (₱{loc.charge} delivery fee)
                                                             </option>
                                                         ))}
                                                     </select>
                                                     {customerDetails.delivery_location && (
                                                         <p style={{ fontSize: '0.85rem', color: '#059669', marginTop: '8px', fontWeight: 600 }}>
-                                                            📍 Delivery Charge: ₱{DELIVERY_LOCATIONS.find(l => l.name === customerDetails.delivery_location)?.charge || 0}
+                                                            📍 Delivery Charge: ₱{deliveryLocations.find(l => l.name === customerDetails.delivery_location)?.charge || 0}
                                                         </p>
                                                     )}
                                                 </div>

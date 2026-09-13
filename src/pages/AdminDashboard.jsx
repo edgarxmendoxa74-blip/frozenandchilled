@@ -47,7 +47,17 @@ const AdminDashboard = () => {
 
     const [categories, setCategories] = useState(() => {
         const saved = localStorage.getItem('categories');
-        return saved ? JSON.parse(saved) : initialCategories;
+        const rawCats = saved ? JSON.parse(saved) : initialCategories;
+        const unique = [];
+        const seen = new Set();
+        for (const cat of rawCats) {
+            const key = (cat.id || cat.name || '').toLowerCase().trim();
+            if (!seen.has(key)) {
+                seen.add(key);
+                unique.push(cat);
+            }
+        }
+        return unique;
     });
 
     const [orders, setOrders] = useState(() => {
@@ -63,11 +73,51 @@ const AdminDashboard = () => {
         ];
     });
 
+    const DEFAULT_DELIVERY_LOCATIONS = [
+        { id: 'loc_1', name: 'Poblacion', charge: 35 },
+        { id: 'loc_2', name: 'San Antonio', charge: 35 },
+        { id: 'loc_3', name: 'Mangorocoro', charge: 35 },
+        { id: 'loc_4', name: 'Progreso', charge: 35 },
+        { id: 'loc_5', name: 'Pili', charge: 35 },
+        { id: 'loc_6', name: 'Lanjagan', charge: 35 },
+        { id: 'loc_7', name: 'Taguhangin', charge: 35 },
+        { id: 'loc_8', name: 'Bugtong Bukid', charge: 35 },
+        { id: 'loc_9', name: 'Brgy. Rojas', charge: 35 },
+        { id: 'loc_10', name: 'Pinantan Elizalde', charge: 35 },
+        { id: 'loc_11', name: 'Puente Bunglas', charge: 35 },
+        { id: 'loc_12', name: 'Bat-os', charge: 35 },
+        { id: 'loc_13', name: 'Malayu-an', charge: 40 },
+        { id: 'loc_14', name: 'Barrido', charge: 40 },
+        { id: 'loc_15', name: 'Culasi', charge: 45 },
+        { id: 'loc_16', name: 'Luca', charge: 45 },
+        { id: 'loc_17', name: 'Bay-ang', charge: 50 }
+    ];
+
+    const [deliveryLocations, setDeliveryLocations] = useState(() => {
+        const saved = localStorage.getItem('deliveryLocations');
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) {}
+        }
+        return DEFAULT_DELIVERY_LOCATIONS;
+    });
+
     const [paymentSettings, setPaymentSettings] = useState(() => {
         const saved = localStorage.getItem('paymentSettings');
         if (saved) {
             const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) return parsed;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                // Deduplicate by name/id
+                const unique = [];
+                const seen = new Set();
+                for (const item of parsed) {
+                    const key = (item.name || item.id || '').toLowerCase().trim();
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        unique.push(item);
+                    }
+                }
+                return unique;
+            }
         }
         return [
             { id: 'gcash', name: 'GCash', accountNumber: '09947246294', accountName: 'Chilled And Frozen Hub', is_active: true },
@@ -94,13 +144,44 @@ const AdminDashboard = () => {
         const fetchAdminData = async () => {
             try {
                 const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
-                if (catData && catData.length > 0) setCategories(catData);
+                if (catData && catData.length > 0) {
+                    const unique = [];
+                    const seen = new Set();
+                    for (const c of catData) {
+                        const key = (c.id || c.name || '').toLowerCase().trim();
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            unique.push(c);
+                        }
+                    }
+                    setCategories(unique);
+                    localStorage.setItem('categories', JSON.stringify(unique));
+                }
 
                 const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
                 if (itemData && itemData.length > 0) setItems(itemData);
 
                 const { data: payData } = await supabase.from('payment_settings').select('*');
-                if (payData && payData.length > 0) setPaymentSettings(payData);
+                if (payData && payData.length > 0) {
+                    // Deduplicate fetched payment methods by name or id
+                    const uniquePay = [];
+                    const seen = new Set();
+                    for (const p of payData) {
+                        const key = (p.name || p.id || '').toLowerCase().trim();
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            uniquePay.push(p);
+                        }
+                    }
+                    setPaymentSettings(uniquePay);
+                    localStorage.setItem('paymentSettings', JSON.stringify(uniquePay));
+                }
+
+                const { data: locData } = await supabase.from('delivery_locations').select('*');
+                if (locData && locData.length > 0) {
+                    setDeliveryLocations(locData);
+                    localStorage.setItem('deliveryLocations', JSON.stringify(locData));
+                }
 
                 const { data: typeData } = await supabase.from('order_types').select('*');
                 if (typeData && typeData.length > 0) setOrderTypes(typeData);
@@ -136,6 +217,8 @@ const AdminDashboard = () => {
         const [stockFilter, setStockFilter] = useState('all'); // all, low, out, instock
         const [localStockState, setLocalStockState] = useState({});
         const [isSaving, setIsSaving] = useState(false);
+        const [inventoryModal, setInventoryModal] = useState(null); // null = closed, object = editing/adding
+        const [modalImage, setModalImage] = useState('');
 
         useEffect(() => {
             const stateObj = {};
@@ -231,6 +314,95 @@ const AdminDashboard = () => {
             }
         };
 
+        // --- ADD / EDIT INVENTORY MODAL HANDLERS ---
+        const openAddModal = () => {
+            setModalImage('');
+            setInventoryModal({
+                id: 'new',
+                name: '',
+                description: '',
+                price: '',
+                promo_price: '',
+                unit: 'kg',
+                min_order_note: '',
+                category_id: categories[0]?.id || '',
+                stock: 20,
+                low_stock_threshold: 5,
+                out_of_stock: false,
+                image: ''
+            });
+        };
+
+        const openEditModal = (item) => {
+            setModalImage(item.image || '');
+            setInventoryModal({
+                id: item.id,
+                name: item.name || '',
+                description: item.description || '',
+                price: item.price || '',
+                promo_price: item.promo_price || '',
+                unit: item.unit || 'kg',
+                min_order_note: item.min_order_note || item.minOrderNote || '',
+                category_id: item.category_id || categories[0]?.id || '',
+                stock: item.stock ?? 0,
+                low_stock_threshold: item.low_stock_threshold || item.lowStockThreshold || 5,
+                out_of_stock: Boolean(item.out_of_stock),
+                image: item.image || ''
+            });
+        };
+
+        const handleModalSubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const itemData = {
+                name: formData.get('name'),
+                description: formData.get('description'),
+                price: Number(formData.get('price')),
+                promo_price: formData.get('promoPrice') ? Number(formData.get('promoPrice')) : null,
+                unit: formData.get('unit') || 'kg',
+                min_order_note: formData.get('minOrderNote') || '',
+                category_id: formData.get('categoryId'),
+                image: modalImage || inventoryModal.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80',
+                stock: Number(formData.get('stock') || 0),
+                low_stock_threshold: Number(formData.get('lowStockThreshold') || 5),
+                out_of_stock: formData.get('outOfStock') === 'on' || Number(formData.get('stock') || 0) === 0
+            };
+
+            if (inventoryModal.id === 'new') {
+                if (!itemData.category_id) { showMessage('⚠️ Please select a category first.'); return; }
+                const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
+                if (error) { console.error(error); showMessage(`Error adding inventory: ${error.message}`); return; }
+                setItems([...items, data]);
+                showMessage(`✅ New inventory item "${itemData.name}" added successfully!`);
+            } else {
+                const { data, error } = await supabase.from('menu_items').update(itemData).eq('id', inventoryModal.id).select().single();
+                if (error) { console.error(error); showMessage(`Error updating inventory: ${error.message}`); return; }
+                setItems(items.map(i => i.id === data.id ? data : i));
+                showMessage(`✅ Inventory item "${itemData.name}" updated successfully!`);
+            }
+
+            setInventoryModal(null);
+            setModalImage('');
+        };
+
+        const deleteInventoryItem = async (item) => {
+            if (window.confirm(`Are you sure you want to delete "${item.name}" from inventory? This action cannot be undone.`)) {
+                const { error } = await supabase.from('menu_items').delete().eq('id', item.id);
+                if (error) { console.error(error); showMessage(`Error deleting: ${error.message}`); return; }
+                setItems(items.filter(i => i.id !== item.id));
+                showMessage(`🗑️ "${item.name}" removed from inventory.`);
+            }
+        };
+
+        const handleImageUpload = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onloadend = () => setModalImage(reader.result);
+                reader.readAsDataURL(file);
+            }
+        };
+
         // KPI Counts
         const totalProductsCount = items.length;
         const lowStockCount = items.filter(i => {
@@ -264,8 +436,148 @@ const AdminDashboard = () => {
             return matchesSearch && matchesCat && matchesStock;
         });
 
+        // --- MODAL STYLES ---
+        const modalOverlayStyle = {
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+            zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '20px', animation: 'fadeIn 0.25s ease'
+        };
+        const modalBoxStyle = {
+            background: 'white', borderRadius: '24px', width: '100%', maxWidth: '680px',
+            maxHeight: '90vh', overflowY: 'auto', padding: '36px',
+            boxShadow: '0 30px 80px rgba(0,0,0,0.25)', position: 'relative',
+            animation: 'slideUp 0.3s ease'
+        };
+        const modalLabelStyle = { display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' };
+        const modalInputStyle = { width: '100%', padding: '11px 14px', borderRadius: '12px', border: '1.5px solid #e2e8f0', outline: 'none', fontSize: '0.92rem', fontFamily: 'Outfit, sans-serif', transition: 'border-color 0.2s', boxSizing: 'border-box' };
+
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+                {/* ─── ADD / EDIT INVENTORY MODAL ─── */}
+                {inventoryModal && (
+                    <div style={modalOverlayStyle} onClick={() => { setInventoryModal(null); setModalImage(''); }}>
+                        <div style={modalBoxStyle} onClick={e => e.stopPropagation()}>
+                            {/* Modal Header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px', borderBottom: '2px solid #f1f5f9', paddingBottom: '18px' }}>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                                        {inventoryModal.id === 'new' ? '➕ Add New Inventory Item' : `✏️ Edit: ${inventoryModal.name}`}
+                                    </h3>
+                                    <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
+                                        {inventoryModal.id === 'new' ? 'Fill in the details below to add a new product to your inventory.' : 'Update the product details and stock information below.'}
+                                    </p>
+                                </div>
+                                <button onClick={() => { setInventoryModal(null); setModalImage(''); }} style={{ border: 'none', background: '#f1f5f9', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
+                                    <X size={20} color="#64748b" />
+                                </button>
+                            </div>
+
+                            {/* Modal Form */}
+                            <form onSubmit={handleModalSubmit}>
+                                <div style={{ display: 'grid', gap: '20px' }}>
+
+                                    {/* Product Image Upload */}
+                                    <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1.5px dashed #cbd5e1' }}>
+                                        <label style={modalLabelStyle}>📸 Product Image</label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '8px' }}>
+                                            <div style={{ width: '80px', height: '80px', borderRadius: '14px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {(modalImage || inventoryModal.image) ? (
+                                                    <img src={modalImage || inventoryModal.image} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                                                ) : (
+                                                    <Camera size={28} color="#94a3b8" />
+                                                )}
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <input type="file" accept="image/*" onChange={handleImageUpload} style={{ ...modalInputStyle, padding: '8px 12px', fontSize: '0.85rem' }} />
+                                                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>PNG, JPG up to 5MB. Leave empty for default image.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Product Name */}
+                                    <div>
+                                        <label style={modalLabelStyle}>Product Name *</label>
+                                        <input name="name" defaultValue={inventoryModal.name} placeholder="e.g. Beef Shortloin St. Helens" required style={modalInputStyle} />
+                                    </div>
+
+                                    {/* Category + Unit Row */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                            <label style={modalLabelStyle}>Category *</label>
+                                            <select name="categoryId" defaultValue={inventoryModal.category_id} style={modalInputStyle} required>
+                                                <option value="">Select category...</option>
+                                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label style={modalLabelStyle}>Unit of Measure</label>
+                                            <input name="unit" defaultValue={inventoryModal.unit || 'kg'} placeholder="kg, slab, box, sack, pack" style={modalInputStyle} />
+                                        </div>
+                                    </div>
+
+                                    {/* Description */}
+                                    <div>
+                                        <label style={modalLabelStyle}>Description</label>
+                                        <textarea name="description" defaultValue={inventoryModal.description} placeholder="Short product description..." style={{ ...modalInputStyle, minHeight: '75px', resize: 'vertical' }} />
+                                    </div>
+
+                                    {/* Price Section */}
+                                    <div style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', padding: '20px', borderRadius: '16px', border: '1px solid #bbf7d0' }}>
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#166534', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>💰 Pricing</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                            <div>
+                                                <label style={modalLabelStyle}>Regular Price (₱) *</label>
+                                                <input name="price" type="number" step="0.01" defaultValue={inventoryModal.price} placeholder="0.00" required style={modalInputStyle} />
+                                            </div>
+                                            <div>
+                                                <label style={modalLabelStyle}>Promo / Sale Price (₱)</label>
+                                                <input name="promoPrice" type="number" step="0.01" defaultValue={inventoryModal.promo_price || ''} placeholder="Optional" style={modalInputStyle} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Stock Section */}
+                                    <div style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', padding: '20px', borderRadius: '16px', border: '1px solid #93c5fd' }}>
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1e40af', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>📦 Stock & Inventory</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                            <div>
+                                                <label style={modalLabelStyle}>Current Stock Qty *</label>
+                                                <input name="stock" type="number" defaultValue={inventoryModal.stock} placeholder="0" required style={modalInputStyle} />
+                                            </div>
+                                            <div>
+                                                <label style={modalLabelStyle}>Low Stock Alert (≤)</label>
+                                                <input name="lowStockThreshold" type="number" defaultValue={inventoryModal.low_stock_threshold} placeholder="5" required style={modalInputStyle} />
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', padding: '10px 14px', background: 'rgba(255,255,255,0.7)', borderRadius: '10px' }}>
+                                            <input name="outOfStock" type="checkbox" defaultChecked={inventoryModal.out_of_stock} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#dc2626' }} />
+                                            <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#991b1b', cursor: 'pointer' }}>Mark as Out of Stock (hides from store)</label>
+                                        </div>
+                                    </div>
+
+                                    {/* Min Order Note */}
+                                    <div>
+                                        <label style={modalLabelStyle}>Minimum Order Note / Tag (Optional)</label>
+                                        <input name="minOrderNote" defaultValue={inventoryModal.min_order_note} placeholder="e.g. Minimum 1 Slab, Wholesale min 1 box" style={modalInputStyle} />
+                                    </div>
+                                </div>
+
+                                {/* Modal Actions */}
+                                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '28px', paddingTop: '20px', borderTop: '2px solid #f1f5f9' }}>
+                                    <button type="button" onClick={() => { setInventoryModal(null); setModalImage(''); }} style={{ padding: '12px 24px', borderRadius: '12px', border: '1.5px solid #cbd5e1', background: 'white', fontWeight: 700, fontSize: '0.92rem', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', color: '#64748b' }}>
+                                        Cancel
+                                    </button>
+                                    <button type="submit" style={{ padding: '12px 32px', borderRadius: '12px', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', color: 'white', border: 'none', fontWeight: 800, fontSize: '0.92rem', cursor: 'pointer', fontFamily: 'Outfit, sans-serif', boxShadow: '0 6px 20px rgba(5,150,105,0.35)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <Save size={18} /> {inventoryModal.id === 'new' ? 'Add to Inventory' : 'Save Changes'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
                 {/* KPI Metrics Summary Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                     <div style={{ background: 'white', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
@@ -298,19 +610,24 @@ const AdminDashboard = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                         <div>
                             <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>📦 Stock & Inventory Control Center</h2>
-                            <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>Manage stock levels, edit alert thresholds, and toggle stock availability per product.</p>
+                            <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>Manage stock levels, edit items, add new inventory, and toggle stock availability.</p>
                         </div>
-                        <button onClick={saveAllInventory} disabled={isSaving} style={{ padding: '12px 24px', borderRadius: '12px', background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(30,139,0,0.3)' }}>
-                            <Save size={18} /> {isSaving ? 'Saving Updates...' : 'Save All Inventory Updates'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <button onClick={openAddModal} style={{ padding: '12px 22px', borderRadius: '12px', background: 'linear-gradient(135deg, #F9B700 0%, #f59e0b 100%)', color: '#0c250d', fontWeight: 800, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(249,183,0,0.35)', fontSize: '0.88rem', fontFamily: 'Outfit, sans-serif' }}>
+                                <Plus size={18} /> Add Inventory
+                            </button>
+                            <button onClick={saveAllInventory} disabled={isSaving} style={{ padding: '12px 24px', borderRadius: '12px', background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(30,139,0,0.3)', fontSize: '0.88rem', fontFamily: 'Outfit, sans-serif' }}>
+                                <Save size={18} /> {isSaving ? 'Saving...' : 'Save All Stock'}
+                            </button>
+                        </div>
                     </div>
 
                     {/* Filter Bar */}
                     <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
                             <button onClick={() => setStockFilter('all')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'all' ? 'white' : 'transparent', color: stockFilter === 'all' ? '#0f172a' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer', boxShadow: stockFilter === 'all' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>All ({items.length})</button>
-                            <button onClick={() => setStockFilter('low')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'low' ? '#fef3c7' : 'transparent', color: stockFilter === 'low' ? '#92400e' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>⚠️ Low Stock ({lowStockCount})</button>
-                            <button onClick={() => setStockFilter('out')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'out' ? '#fee2e2' : 'transparent', color: stockFilter === 'out' ? '#991b1b' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>🚫 Out of Stock ({outOfStockCount})</button>
+                            <button onClick={() => setStockFilter('low')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'low' ? '#fef3c7' : 'transparent', color: stockFilter === 'low' ? '#92400e' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>⚠️ Low ({lowStockCount})</button>
+                            <button onClick={() => setStockFilter('out')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'out' ? '#fee2e2' : 'transparent', color: stockFilter === 'out' ? '#991b1b' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>🚫 Out ({outOfStockCount})</button>
                         </div>
 
                         <input
@@ -341,7 +658,7 @@ const AdminDashboard = () => {
                                     <th style={{ padding: '12px' }}>Stock Quantity (Quick Adjust)</th>
                                     <th style={{ padding: '12px' }}>Alert Threshold</th>
                                     <th style={{ padding: '12px' }}>Status</th>
-                                    <th style={{ padding: '12px', textAlign: 'right' }}>Action</th>
+                                    <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -361,7 +678,7 @@ const AdminDashboard = () => {
                                                     <img src={item.image} style={{ width: '42px', height: '42px', borderRadius: '8px', objectFit: 'cover' }} alt="" />
                                                     <div>
                                                         <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>{item.name}</div>
-                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Unit: {stockData.unit}</span>
+                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Unit: {stockData.unit} · ₱{item.price}{item.promo_price ? ` → ₱${item.promo_price}` : ''}</span>
                                                     </div>
                                                 </div>
                                             </td>
@@ -412,12 +729,28 @@ const AdminDashboard = () => {
                                                 </button>
                                             </td>
                                             <td style={{ padding: '12px 15px', borderTopRightRadius: '12px', borderBottomRightRadius: '12px', textAlign: 'right' }}>
-                                                <button
-                                                    onClick={() => saveIndividualStock(item)}
-                                                    style={{ padding: '6px 14px', borderRadius: '8px', background: '#059669', color: 'white', border: 'none', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}
-                                                >
-                                                    Save Stock
-                                                </button>
+                                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                                    <button
+                                                        onClick={() => openEditModal(item)}
+                                                        title="Edit Item"
+                                                        style={{ padding: '6px 12px', borderRadius: '8px', background: '#f1f5f9', color: '#1e40af', border: 'none', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                    >
+                                                        <Edit2 size={14} /> Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => saveIndividualStock(item)}
+                                                        style={{ padding: '6px 12px', borderRadius: '8px', background: '#059669', color: 'white', border: 'none', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}
+                                                    >
+                                                        Save
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deleteInventoryItem(item)}
+                                                        title="Delete Item"
+                                                        style={{ padding: '6px 8px', borderRadius: '8px', background: '#fee2e2', color: '#ef4444', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -719,6 +1052,16 @@ const AdminDashboard = () => {
             }
         };
 
+        const uniqueCategories = [];
+        const seenCatNames = new Set();
+        for (const cat of categories) {
+            const nameKey = (cat.name || cat.id || '').toLowerCase().trim();
+            if (!seenCatNames.has(nameKey)) {
+                seenCatNames.add(nameKey);
+                uniqueCategories.push(cat);
+            }
+        }
+
         return (
             <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
@@ -737,8 +1080,8 @@ const AdminDashboard = () => {
                 )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
-                    {categories.map((cat, idx) => (
-                        <div key={cat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                    {uniqueCategories.map((cat, idx) => (
+                        <div key={cat.id || cat.name || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
                             <div>
                                 <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{cat.name}</span>
                                 <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Sort order: #{idx + 1}</div>
@@ -802,92 +1145,965 @@ const AdminDashboard = () => {
         );
     };
 
-    const OrderTypeManager = () => (
-        <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-            <h2 style={{ margin: '0 0 20px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d' }}>🚚 Order Types</h2>
-            <div style={{ display: 'flex', gap: '15px' }}>
-                {orderTypes.map(t => (
-                    <div key={t.id} style={{ padding: '16px 24px', background: '#f0fdf4', borderRadius: '14px', border: '1px solid #bbf7d0', fontWeight: 800, color: '#166534' }}>
-                        ✓ {t.name} (Active)
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
+    const OrderTypeManager = () => {
+        const [isLocModalOpen, setIsLocModalOpen] = useState(false);
+        const [editingLoc, setEditingLoc] = useState(null);
+        const [locForm, setLocForm] = useState({ id: '', name: '', charge: 35 });
+        const [searchLoc, setSearchLoc] = useState('');
 
-    const PaymentSettings = () => (
-        <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-            <h2 style={{ margin: '0 0 20px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d' }}>💳 Payment Methods</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-                {paymentSettings.map(p => (
-                    <div key={p.id} style={{ padding: '20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ margin: '0 0 6px', color: '#0c250d' }}>{p.name}</h4>
-                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Account: {p.account_number || p.accountNumber || 'N/A'}</p>
+        const handleSaveLocation = async (e) => {
+            e.preventDefault();
+            if (!locForm.name.trim()) return;
+
+            const newLoc = {
+                id: locForm.id || 'loc_' + Date.now(),
+                name: locForm.name.trim(),
+                charge: Number(locForm.charge) || 0
+            };
+
+            let updatedList = [];
+            if (editingLoc) {
+                updatedList = deliveryLocations.map(l => l.id === newLoc.id || l.name === newLoc.name ? newLoc : l);
+            } else {
+                updatedList = [...deliveryLocations, newLoc];
+            }
+
+            setDeliveryLocations(updatedList);
+            localStorage.setItem('deliveryLocations', JSON.stringify(updatedList));
+
+            try {
+                await supabase.from('delivery_locations').upsert([newLoc]);
+            } catch (err) {
+                console.log('Supabase location sync notice:', err);
+            }
+
+            showMessage(editingLoc ? `✅ Delivery charge for ${newLoc.name} updated!` : `🎉 Added delivery location ${newLoc.name}!`);
+            setIsLocModalOpen(false);
+        };
+
+        const handleDeleteLocation = async (id, name) => {
+            if (!window.confirm(`Delete delivery location "${name}"?`)) return;
+            const updated = deliveryLocations.filter(l => (l.id ? l.id !== id : l.name !== name));
+            setDeliveryLocations(updated);
+            localStorage.setItem('deliveryLocations', JSON.stringify(updated));
+
+            try {
+                if (id) await supabase.from('delivery_locations').delete().eq('id', id);
+                else await supabase.from('delivery_locations').delete().eq('name', name);
+            } catch (err) {
+                console.log('Supabase location delete notice:', err);
+            }
+
+            showMessage(`🗑️ Delivery location "${name}" removed.`);
+        };
+
+        const filteredLocations = deliveryLocations.filter(l =>
+            l.name.toLowerCase().includes(searchLoc.toLowerCase())
+        );
+
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* Fulfillment Summary Cards */}
+                <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                    <h2 style={{ margin: '0 0 8px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                        🚚 Fulfillment Methods
+                    </h2>
+                    <p style={{ color: '#64748b', fontSize: '0.88rem', margin: '0 0 20px' }}>
+                        Supported checkout order types for store customers.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                        <div style={{ padding: '18px', background: '#f0fdf4', borderRadius: '16px', border: '1.5px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                            <div style={{ background: '#166534', color: 'white', borderRadius: '50%', padding: '10px', display: 'flex' }}><ShoppingBag size={22} /></div>
+                            <div>
+                                <h4 style={{ margin: '0 0 2px', fontSize: '1.05rem', color: '#166534', fontWeight: 900 }}>Pickup</h4>
+                                <span style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 700 }}>🟢 Active (Free / Store Claim)</span>
+                            </div>
+                        </div>
+                        <div style={{ padding: '18px', background: '#f0fdf4', borderRadius: '16px', border: '1.5px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                            <div style={{ background: '#166534', color: 'white', borderRadius: '50%', padding: '10px', display: 'flex' }}><Truck size={22} /></div>
+                            <div>
+                                <h4 style={{ margin: '0 0 2px', fontSize: '1.05rem', color: '#166534', fontWeight: 900 }}>Delivery</h4>
+                                <span style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 700 }}>🟢 Active ({deliveryLocations.length} Barangay Rates)</span>
+                            </div>
+                        </div>
                     </div>
-                ))}
+                </div>
+
+                {/* Delivery Location Rates Manager */}
+                <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
+                        <div>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                                📍 Barangay Delivery Rates
+                            </h3>
+                            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.85rem' }}>
+                                Customize delivery charges per location/barangay
+                            </p>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <input
+                                type="text"
+                                placeholder="Search barangay..."
+                                value={searchLoc}
+                                onChange={(e) => setSearchLoc(e.target.value)}
+                                style={{ ...inputStyle, width: '200px', padding: '8px 14px' }}
+                            />
+                            <button
+                                onClick={() => {
+                                    setEditingLoc(null);
+                                    setLocForm({ id: 'loc_' + Date.now(), name: '', charge: 35 });
+                                    setIsLocModalOpen(true);
+                                }}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    background: '#0c250d',
+                                    color: '#F9B700',
+                                    border: 'none',
+                                    padding: '10px 18px',
+                                    borderRadius: '12px',
+                                    fontWeight: 800,
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <Plus size={16} /> Add Barangay Location
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Table of Locations */}
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead>
+                                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                                    <th style={{ padding: '14px 16px', fontWeight: 800, fontSize: '0.85rem', color: '#475569' }}>BARANGAY / LOCATION</th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 800, fontSize: '0.85rem', color: '#475569' }}>DELIVERY FEE (₱)</th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 800, fontSize: '0.85rem', color: '#475569', textAlign: 'right' }}>ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredLocations.map((loc, idx) => (
+                                    <tr key={loc.id || loc.name || idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
+                                        <td style={{ padding: '14px 16px', fontWeight: 700, color: '#0c250d', fontSize: '0.95rem' }}>
+                                            📍 {loc.name}
+                                        </td>
+                                        <td style={{ padding: '14px 16px' }}>
+                                            <span style={{ background: '#dcfce7', color: '#166534', padding: '6px 14px', borderRadius: '20px', fontWeight: 800, fontSize: '0.9rem' }}>
+                                                ₱{loc.charge}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingLoc(loc);
+                                                        setLocForm({ id: loc.id || 'loc_' + Date.now(), name: loc.name, charge: loc.charge });
+                                                        setIsLocModalOpen(true);
+                                                    }}
+                                                    style={{ border: '1px solid #cbd5e1', background: 'white', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                >
+                                                    <Edit2 size={14} /> Edit Fee
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteLocation(loc.id, loc.name)}
+                                                    style={{ border: 'none', background: '#fee2e2', padding: '6px 10px', borderRadius: '8px', cursor: 'pointer' }}
+                                                    title="Delete Location"
+                                                >
+                                                    <Trash2 size={14} color="#ef4444" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* MODAL FOR ADD/EDIT LOCATION */}
+                {isLocModalOpen && (
+                    <div style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(4px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px'
+                    }}>
+                        <div style={{
+                            background: 'white', borderRadius: '24px', maxWidth: '420px', width: '100%',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', overflow: 'hidden'
+                        }}>
+                            <div style={{
+                                background: 'linear-gradient(135deg, #091f0a 0%, #0d2b0e 100%)',
+                                color: 'white', padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Truck color="#F9B700" size={22} />
+                                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900, color: 'white' }}>
+                                        {editingLoc ? `Edit Delivery Fee: ${editingLoc.name}` : 'Add New Delivery Barangay'}
+                                    </h3>
+                                </div>
+                                <button onClick={() => setIsLocModalOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}><X size={18} /></button>
+                            </div>
+
+                            <form onSubmit={handleSaveLocation} style={{ padding: '24px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
+                                            Barangay / Location Name *
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Poblacion, San Antonio"
+                                            value={locForm.name}
+                                            onChange={(e) => setLocForm({ ...locForm, name: e.target.value })}
+                                            required
+                                            style={inputStyle}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
+                                            Delivery Charge Fee (₱) *
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            placeholder="e.g. 35"
+                                            value={locForm.charge}
+                                            onChange={(e) => setLocForm({ ...locForm, charge: e.target.value })}
+                                            required
+                                            style={inputStyle}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                                    <button type="button" onClick={() => setIsLocModalOpen(false)} style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: 'white', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                                    <button type="submit" style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: '#0c250d', color: '#F9B700', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}><Save size={16} /> Save Rate</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
             </div>
-        </div>
-    );
+        );
+    };
+
+    const PaymentSettings = () => {
+        const [isModalOpen, setIsModalOpen] = useState(false);
+        const [editingMethod, setEditingMethod] = useState(null);
+        const [formData, setFormData] = useState({
+            id: '',
+            name: '',
+            account_number: '',
+            account_name: '',
+            instructions: '',
+            is_active: true
+        });
+
+        const openAddModal = () => {
+            setEditingMethod(null);
+            setFormData({
+                id: 'pay_' + Date.now(),
+                name: '',
+                account_number: '',
+                account_name: '',
+                instructions: '',
+                is_active: true
+            });
+            setIsModalOpen(true);
+        };
+
+        const openEditModal = (method) => {
+            setEditingMethod(method);
+            setFormData({
+                id: method.id,
+                name: method.name || '',
+                account_number: method.account_number || method.accountNumber || '',
+                account_name: method.account_name || method.accountName || '',
+                instructions: method.instructions || '',
+                is_active: method.is_active !== undefined ? method.is_active : true
+            });
+            setIsModalOpen(true);
+        };
+
+        const handleSaveMethod = async (e) => {
+            e.preventDefault();
+            if (!formData.name.trim()) {
+                showMessage('Please enter a payment method name');
+                return;
+            }
+
+            const updatedMethod = {
+                id: formData.id,
+                name: formData.name.trim(),
+                account_number: formData.account_number.trim() || 'N/A',
+                account_name: formData.account_name.trim() || 'N/A',
+                instructions: formData.instructions.trim(),
+                is_active: formData.is_active
+            };
+
+            let updatedList = [];
+            if (editingMethod) {
+                updatedList = paymentSettings.map(p => p.id === formData.id ? updatedMethod : p);
+            } else {
+                updatedList = [...paymentSettings, updatedMethod];
+            }
+
+            // Sync to state & localstorage
+            setPaymentSettings(updatedList);
+            localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
+
+            // Sync to Supabase
+            try {
+                const { error } = await supabase.from('payment_settings').upsert([updatedMethod]);
+                if (error) console.log('Supabase payment sync notice:', error.message);
+            } catch (err) {
+                console.log('Supabase sync error:', err);
+            }
+
+            showMessage(editingMethod ? '✅ Payment method updated!' : '🎉 New payment method added!');
+            setIsModalOpen(false);
+        };
+
+        const handleDeleteMethod = async (id, name) => {
+            if (paymentSettings.length <= 1) {
+                showMessage('⚠️ You must keep at least one payment method active!');
+                return;
+            }
+            if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
+
+            const updatedList = paymentSettings.filter(p => p.id !== id);
+            setPaymentSettings(updatedList);
+            localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
+
+            try {
+                await supabase.from('payment_settings').delete().eq('id', id);
+            } catch (err) {
+                console.log('Supabase delete error:', err);
+            }
+
+            showMessage(`🗑️ Payment method "${name}" deleted.`);
+        };
+
+        const toggleActiveStatus = async (method) => {
+            const updated = { ...method, is_active: !method.is_active };
+            const updatedList = paymentSettings.map(p => p.id === method.id ? updated : p);
+            setPaymentSettings(updatedList);
+            localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
+
+            try {
+                await supabase.from('payment_settings').upsert([updated]);
+            } catch (err) {
+                console.log('Supabase toggle error:', err);
+            }
+
+            showMessage(`${method.name} is now ${updated.is_active ? '🟢 Active' : '🔴 Inactive'}`);
+        };
+
+        return (
+            <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                {/* Header with Add Button */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '14px' }}>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                            💳 Payment Methods Manager
+                        </h2>
+                        <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.88rem' }}>
+                            Manage customer payment channels (GCash, Maya, Bank Transfer, COD, etc.)
+                        </p>
+                    </div>
+                    <button
+                        onClick={openAddModal}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: '#0c250d',
+                            color: '#F9B700',
+                            border: 'none',
+                            padding: '10px 20px',
+                            borderRadius: '12px',
+                            fontWeight: 800,
+                            fontSize: '0.9rem',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 14px rgba(12,37,13,0.25)',
+                            transition: 'transform 0.2s'
+                        }}
+                    >
+                        <Plus size={18} /> Add Payment Method
+                    </button>
+                </div>
+
+                {/* Grid of Payment Methods */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '18px' }}>
+                    {paymentSettings.map(p => {
+                        const accNo = p.account_number || p.accountNumber || 'N/A';
+                        const accName = p.account_name || p.accountName || 'N/A';
+                        const isActive = p.is_active !== undefined ? p.is_active : true;
+
+                        return (
+                            <div
+                                key={p.id}
+                                style={{
+                                    padding: '22px',
+                                    background: isActive ? '#ffffff' : '#f8fafc',
+                                    borderRadius: '16px',
+                                    border: isActive ? '1.5px solid #cbd5e1' : '1px dashed #cbd5e1',
+                                    boxShadow: isActive ? '0 4px 15px rgba(0,0,0,0.04)' : 'none',
+                                    opacity: isActive ? 1 : 0.7,
+                                    position: 'relative',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justify: 'space-between'
+                                }}
+                            >
+                                <div>
+                                    {/* Top row: Title + Status Pill */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div style={{ background: isActive ? '#f0fdf4' : '#f1f5f9', color: isActive ? '#166534' : '#64748b', padding: '8px', borderRadius: '10px' }}>
+                                                <CreditCard size={20} />
+                                            </div>
+                                            <div>
+                                                <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#0c250d', fontWeight: 900 }}>{p.name}</h4>
+                                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>ID: {p.id}</span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => toggleActiveStatus(p)}
+                                            style={{
+                                                padding: '4px 10px',
+                                                borderRadius: '20px',
+                                                border: 'none',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 800,
+                                                cursor: 'pointer',
+                                                background: isActive ? '#dcfce7' : '#fee2e2',
+                                                color: isActive ? '#166534' : '#991b1b'
+                                            }}
+                                        >
+                                            {isActive ? '🟢 Active' : '🔴 Inactive'}
+                                        </button>
+                                    </div>
+
+                                    {/* Details */}
+                                    <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', border: '1px solid #f1f5f9' }}>
+                                        <div style={{ fontSize: '0.85rem', color: '#334155', marginBottom: '4px' }}>
+                                            <span style={{ color: '#64748b', fontWeight: 600 }}>Number/Phone:</span> <strong style={{ color: '#0c250d' }}>{accNo}</strong>
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: '#334155' }}>
+                                            <span style={{ color: '#64748b', fontWeight: 600 }}>Account Name:</span> <strong style={{ color: '#0c250d' }}>{accName}</strong>
+                                        </div>
+                                        {p.instructions && (
+                                            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '8px', fontStyle: 'italic', borderTop: '1px solid #e2e8f0', paddingTop: '6px' }}>
+                                                "{p.instructions}"
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Bottom Action Buttons */}
+                                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+                                    <button
+                                        onClick={() => openEditModal(p)}
+                                        style={{
+                                            flex: 1,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px',
+                                            padding: '8px',
+                                            borderRadius: '8px',
+                                            border: '1px solid #cbd5e1',
+                                            background: 'white',
+                                            color: '#0c250d',
+                                            fontWeight: 800,
+                                            fontSize: '0.82rem',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <Edit2 size={14} /> Edit
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteMethod(p.id, p.name)}
+                                        style={{
+                                            padding: '8px 12px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            background: '#fee2e2',
+                                            color: '#ef4444',
+                                            fontWeight: 800,
+                                            fontSize: '0.82rem',
+                                            cursor: 'pointer'
+                                        }}
+                                        title="Delete Method"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* ADD / EDIT MODAL */}
+                {isModalOpen && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0, 0, 0, 0.65)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 9999,
+                        padding: '20px'
+                    }}>
+                        <div style={{
+                            background: 'white',
+                            borderRadius: '24px',
+                            maxWidth: '480px',
+                            width: '100%',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+                            overflow: 'hidden',
+                            animation: 'modalSlideIn 0.2s ease-out'
+                        }}>
+                            {/* Modal Header */}
+                            <div style={{
+                                background: 'linear-gradient(135deg, #091f0a 0%, #0d2b0e 100%)',
+                                color: 'white',
+                                padding: '20px 24px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <CreditCard color="#F9B700" size={22} />
+                                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: 'white' }}>
+                                        {editingMethod ? `Edit ${editingMethod.name}` : 'Add New Payment Method'}
+                                    </h3>
+                                </div>
+                                <button
+                                    onClick={() => setIsModalOpen(false)}
+                                    style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Modal Form */}
+                            <form onSubmit={handleSaveMethod} style={{ padding: '24px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
+                                            Payment Method Name *
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. GCash, Maya, Bank Transfer, COD"
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                            required
+                                            style={inputStyle}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
+                                            Account / Phone Number
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. 09947246294 or Account No."
+                                            value={formData.account_number}
+                                            onChange={(e) => setFormData({ ...formData, account_number: e.target.value })}
+                                            style={inputStyle}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
+                                            Account Name / Holder
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Chilled And Frozen Hub"
+                                            value={formData.account_name}
+                                            onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
+                                            style={inputStyle}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
+                                            Instructions for Customer (Optional)
+                                        </label>
+                                        <textarea
+                                            placeholder="e.g. Please send screenshot of payment upon checkout."
+                                            value={formData.instructions}
+                                            onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
+                                            rows={3}
+                                            style={{ ...inputStyle, resize: 'vertical' }}
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            id="is_active_chk"
+                                            checked={formData.is_active}
+                                            onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                                            style={{ width: '18px', height: '18px', accentColor: '#0c250d', cursor: 'pointer' }}
+                                        />
+                                        <label htmlFor="is_active_chk" style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0c250d', cursor: 'pointer' }}>
+                                            Enable this payment method for checkout
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {/* Modal Footer */}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsModalOpen(false)}
+                                        style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: 'white', fontWeight: 700, cursor: 'pointer' }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: '#0c250d', color: '#F9B700', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                                    >
+                                        <Save size={16} /> Save Method
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const StoreGeneralSettings = () => {
+        const [banners, setBanners] = useState(() => {
+            if (Array.isArray(storeSettings.banner_images) && storeSettings.banner_images.length > 0) {
+                return storeSettings.banner_images;
+            }
+            return [
+                'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&q=80',
+                'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80',
+                'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&q=80'
+            ];
+        });
+
+        const [newBannerUrl, setNewBannerUrl] = useState('');
+        const [isUploading, setIsUploading] = useState(false);
+
+        const handleAddBanner = (e) => {
+            e.preventDefault();
+            if (!newBannerUrl.trim()) return;
+            const updated = [...banners, newBannerUrl.trim()];
+            setBanners(updated);
+            setNewBannerUrl('');
+        };
+
+        const handleRemoveBanner = (index) => {
+            if (banners.length <= 1) {
+                showMessage('⚠️ You should keep at least 1 hero banner image!');
+                return;
+            }
+            const updated = banners.filter((_, i) => i !== index);
+            setBanners(updated);
+        };
+
+        const handleFileUpload = async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setIsUploading(true);
+            try {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `banner_${Date.now()}.${fileExt}`;
+                const filePath = `banners/${fileName}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('products')
+                    .upload(filePath, file);
+
+                if (uploadError) {
+                    // Fallback to data URL if Supabase bucket isn't public/configured
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setBanners(prev => [...prev, reader.result]);
+                        setIsUploading(false);
+                        showMessage('🎉 Hero banner image uploaded!');
+                    };
+                    reader.readAsDataURL(file);
+                    return;
+                }
+
+                const { data } = supabase.storage.from('products').getPublicUrl(filePath);
+                if (data?.publicUrl) {
+                    setBanners(prev => [...prev, data.publicUrl]);
+                    showMessage('🎉 Hero banner image uploaded to Supabase!');
+                }
+            } catch (err) {
+                console.error(err);
+                showMessage('Error uploading banner image');
+            } finally {
+                setIsUploading(false);
+            }
+        };
+
+        const handleMoveBanner = (fromIndex, toIndex) => {
+            if (toIndex < 0 || toIndex >= banners.length) return;
+            const updated = [...banners];
+            const [moved] = updated.splice(fromIndex, 1);
+            updated.splice(toIndex, 0, moved);
+            setBanners(updated);
+        };
+
         const handleSave = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const settingsObj = {
+                id: storeSettings.id || 1,
                 store_name: formData.get('storeName'),
                 address: formData.get('address'),
                 contact: formData.get('contact'),
                 manual_status: formData.get('manualStatus'),
                 open_time: formData.get('openTime'),
                 close_time: formData.get('closeTime'),
-                logo_url: storeSettings.logo_url,
-                banner_images: storeSettings.banner_images
+                logo_url: storeSettings.logo_url || '/logo.png',
+                banner_images: banners
             };
 
-            const { error } = await supabase.from('store_settings').upsert([settingsObj]);
-            if (error) { showMessage(`Error: ${error.message}`); return; }
             setStoreSettings(settingsObj);
-            showMessage('🎉 Store general settings saved successfully!');
+            localStorage.setItem('storeSettings', JSON.stringify(settingsObj));
+
+            try {
+                const { error } = await supabase.from('store_settings').upsert([settingsObj]);
+                if (error) console.log('Supabase settings notice:', error.message);
+            } catch (err) {
+                console.log('Supabase sync notice:', err);
+            }
+
+            showMessage('🎉 Store general settings & Hero Slideshow updated successfully!');
         };
 
         return (
-            <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-                <h2 style={{ margin: '0 0 24px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d' }}>⚙️ General Store Settings</h2>
-                <form onSubmit={handleSave}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Store Name</label>
-                            <input name="storeName" defaultValue={storeSettings.store_name} style={inputStyle} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* General Settings Form */}
+                <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                    <h2 style={{ margin: '0 0 24px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                        ⚙️ General Store Settings
+                    </h2>
+                    <form onSubmit={handleSave}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Store Name</label>
+                                <input name="storeName" defaultValue={storeSettings.store_name} style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Address</label>
+                                <input name="address" defaultValue={storeSettings.address} style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Contact Hotline</label>
+                                <input name="contact" defaultValue={storeSettings.contact} style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Opening Time</label>
+                                <input name="openTime" type="time" defaultValue={storeSettings.open_time} style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Closing Time</label>
+                                <input name="closeTime" type="time" defaultValue={storeSettings.close_time} style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Manual Status</label>
+                                <select name="manualStatus" defaultValue={storeSettings.manual_status} style={inputStyle}>
+                                    <option value="auto">Auto (Hours Schedule)</option>
+                                    <option value="open">Always Open</option>
+                                    <option value="closed">Always Closed</option>
+                                </select>
+                            </div>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Address</label>
-                            <input name="address" defaultValue={storeSettings.address} style={inputStyle} />
+
+                        {/* HERO SLIDESHOW MANAGER SECTION */}
+                        <div style={{ marginTop: '36px', paddingTop: '28px', borderTop: '2px dashed #e2e8f0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0c250d', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <ImageIcon color="#F9B700" size={22} /> Hero Section Slideshow Banners ({banners.length})
+                                    </h3>
+                                    <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.85rem' }}>
+                                        Manage background slide images displayed in the main website Hero section
+                                    </p>
+                                </div>
+
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    background: '#f1f5f9',
+                                    color: '#0c250d',
+                                    padding: '10px 18px',
+                                    borderRadius: '12px',
+                                    fontWeight: 700,
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    border: '1px solid #cbd5e1'
+                                }}>
+                                    <Camera size={16} /> {isUploading ? 'Uploading...' : 'Upload Image File'}
+                                    <input type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={isUploading} />
+                                </label>
+                            </div>
+
+                            {/* Add Image by URL Input */}
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+                                <input
+                                    type="url"
+                                    placeholder="Paste Image URL (https://...)"
+                                    value={newBannerUrl}
+                                    onChange={(e) => setNewBannerUrl(e.target.value)}
+                                    style={{ ...inputStyle, flex: 1 }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleAddBanner}
+                                    style={{
+                                        background: '#0c250d',
+                                        color: '#F9B700',
+                                        border: 'none',
+                                        padding: '10px 20px',
+                                        borderRadius: '12px',
+                                        fontWeight: 800,
+                                        fontSize: '0.88rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                >
+                                    <Plus size={16} /> Add Slide Image
+                                </button>
+                            </div>
+
+                            {/* Banner Cards Grid */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+                                {banners.map((url, idx) => (
+                                    <div
+                                        key={idx}
+                                        style={{
+                                            position: 'relative',
+                                            borderRadius: '16px',
+                                            overflow: 'hidden',
+                                            border: '2px solid #e2e8f0',
+                                            background: '#f8fafc',
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+                                        }}
+                                    >
+                                        <img
+                                            src={url}
+                                            alt={`Slide ${idx + 1}`}
+                                            style={{
+                                                width: '100%',
+                                                height: '150px',
+                                                objectFit: 'cover',
+                                                display: 'block'
+                                            }}
+                                            onError={(e) => {
+                                                e.target.src = 'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&q=80';
+                                            }}
+                                        />
+
+                                        {/* Slide Badge */}
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '10px',
+                                            left: '10px',
+                                            background: '#0c250d',
+                                            color: '#F9B700',
+                                            padding: '4px 10px',
+                                            borderRadius: '10px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 800
+                                        }}>
+                                            Slide #{idx + 1}
+                                        </div>
+
+                                        {/* Actions Bar */}
+                                        <div style={{
+                                            padding: '10px 14px',
+                                            background: 'white',
+                                            display: 'flex',
+                                            justify: 'space-between',
+                                            alignItems: 'center',
+                                            borderTop: '1px solid #e2e8f0'
+                                        }}>
+                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                                <button
+                                                    type="button"
+                                                    disabled={idx === 0}
+                                                    onClick={() => handleMoveBanner(idx, idx - 1)}
+                                                    style={{ border: '1px solid #cbd5e1', background: idx === 0 ? '#f1f5f9' : 'white', borderRadius: '6px', padding: '4px 8px', cursor: idx === 0 ? 'default' : 'pointer' }}
+                                                >
+                                                    <ChevronUp size={14} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={idx === banners.length - 1}
+                                                    onClick={() => handleMoveBanner(idx, idx + 1)}
+                                                    style={{ border: '1px solid #cbd5e1', background: idx === banners.length - 1 ? '#f1f5f9' : 'white', borderRadius: '6px', padding: '4px 8px', cursor: idx === banners.length - 1 ? 'default' : 'pointer' }}
+                                                >
+                                                    <ChevronDown size={14} />
+                                                </button>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveBanner(idx)}
+                                                style={{ border: 'none', background: '#fee2e2', color: '#ef4444', padding: '6px 10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 800, fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                            >
+                                                <Trash2 size={14} /> Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Contact Hotline</label>
-                            <input name="contact" defaultValue={storeSettings.contact} style={inputStyle} />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Opening Time</label>
-                            <input name="openTime" type="time" defaultValue={storeSettings.open_time} style={inputStyle} />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Closing Time</label>
-                            <input name="closeTime" type="time" defaultValue={storeSettings.close_time} style={inputStyle} />
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Manual Status</label>
-                            <select name="manualStatus" defaultValue={storeSettings.manual_status} style={inputStyle}>
-                                <option value="auto">Auto (Hours Schedule)</option>
-                                <option value="open">Always Open</option>
-                                <option value="closed">Always Closed</option>
-                            </select>
-                        </div>
-                    </div>
-                    <button type="submit" style={{ marginTop: '24px', padding: '12px 28px', borderRadius: '12px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
-                        Save Settings
-                    </button>
-                </form>
+
+                        {/* Save Button */}
+                        <button
+                            type="submit"
+                            style={{
+                                marginTop: '32px',
+                                padding: '14px 32px',
+                                borderRadius: '14px',
+                                background: '#0c250d',
+                                color: '#F9B700',
+                                border: 'none',
+                                fontWeight: 900,
+                                fontSize: '1rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                boxShadow: '0 4px 15px rgba(12,37,13,0.25)'
+                            }}
+                        >
+                            <Save size={18} /> Save All Store & Slideshow Settings
+                        </button>
+                    </form>
+                </div>
             </div>
         );
     };
