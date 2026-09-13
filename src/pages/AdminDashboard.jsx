@@ -26,13 +26,17 @@ import {
     FileText,
     Camera,
     Utensils,
-    Truck
+    Truck,
+    Check,
+    AlertTriangle,
+    Minus,
+    ExternalLink
 } from 'lucide-react';
 import { categories as initialCategories, menuItems as initialItems } from '../data/MenuData';
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState('menu'); // menu, categories, orders, payment, orderTypes
+    const [activeTab, setActiveTab] = useState('inventory'); // inventory, menu, categories, orders, orderTypes, payment, settings
     const [message, setMessage] = useState('');
 
     // --- STATE MANAGEMENT ---
@@ -54,7 +58,6 @@ const AdminDashboard = () => {
     const [orderTypes, setOrderTypes] = useState(() => {
         const saved = localStorage.getItem('orderTypes');
         return saved ? JSON.parse(saved) : [
-            { id: 'dine-in', name: 'Dine-in' },
             { id: 'pickup', name: 'Pickup' },
             { id: 'delivery', name: 'Delivery' }
         ];
@@ -64,31 +67,24 @@ const AdminDashboard = () => {
         const saved = localStorage.getItem('paymentSettings');
         if (saved) {
             const parsed = JSON.parse(saved);
-            if (!Array.isArray(parsed)) {
-                // Migration for existing users
-                return [
-                    { id: 'gcash', name: 'GCash', accountNumber: parsed.gcash?.number || '', accountName: parsed.gcash?.name || '', qrUrl: parsed.gcash?.qrUrl || '' },
-                    { id: 'paymaya', name: 'PayMaya', accountNumber: parsed.paymaya?.number || '', accountName: parsed.paymaya?.name || '', qrUrl: parsed.paymaya?.qrUrl || '' }
-                ];
-            }
-            return parsed;
+            if (Array.isArray(parsed)) return parsed;
         }
         return [
-            { id: 'gcash', name: 'GCash', accountNumber: '', accountName: '', qrUrl: '' },
-            { id: 'paymaya', name: 'PayMaya', accountNumber: '', accountName: '', qrUrl: '' }
+            { id: 'gcash', name: 'GCash', accountNumber: '09947246294', accountName: 'Chilled And Frozen Hub', is_active: true },
+            { id: 'cod', name: 'Cash on Delivery', accountNumber: 'N/A', accountName: 'Cash Payment', is_active: true }
         ];
     });
 
     const [storeSettings, setStoreSettings] = useState(() => {
         const saved = localStorage.getItem('storeSettings');
         return saved ? JSON.parse(saved) : {
-            manual_status: 'auto', // auto, open, closed
-            open_time: '10:00',
-            close_time: '01:00',
+            manual_status: 'auto',
+            open_time: '08:00',
+            close_time: '19:00',
             store_name: 'Chilled And Frozen Hub',
-            address: '',
-            contact: '',
-            logo_url: '',
+            address: 'Caltex Road, Banaba South, Batangas City',
+            contact: '09947246294 / 09949314800',
+            logo_url: '/logo.png',
             banner_images: []
         };
     });
@@ -97,62 +93,33 @@ const AdminDashboard = () => {
     useEffect(() => {
         const fetchAdminData = async () => {
             try {
-                const { data: catData, error: catError } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
-                if (catError) throw catError;
-                if (catData) setCategories(catData);
+                const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
+                if (catData && catData.length > 0) setCategories(catData);
 
-                const { data: itemData, error: itemError } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
-                if (itemError) throw itemError;
-                if (itemData) setItems(itemData);
+                const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
+                if (itemData && itemData.length > 0) setItems(itemData);
 
-                const { data: payData, error: payError } = await supabase.from('payment_settings').select('*');
-                if (payError) throw payError;
-                if (payData) setPaymentSettings(payData);
+                const { data: payData } = await supabase.from('payment_settings').select('*');
+                if (payData && payData.length > 0) setPaymentSettings(payData);
 
-                const { data: typeData, error: typeError } = await supabase.from('order_types').select('*');
-                if (typeError) throw typeError;
-                if (typeData) setOrderTypes(typeData);
+                const { data: typeData } = await supabase.from('order_types').select('*');
+                if (typeData && typeData.length > 0) setOrderTypes(typeData);
 
-                const { data: storeData, error: storeError } = await supabase.from('store_settings').select('*').limit(1).single();
-                if (storeError && storeError.code !== 'PGRST116') throw storeError; // Ignore if no settings record yet
+                const { data: storeData } = await supabase.from('store_settings').select('*').limit(1).single();
                 if (storeData) setStoreSettings(storeData);
 
-                const { data: orderData, error: orderError } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
-                if (orderError) throw orderError;
-                if (orderData) setOrders(orderData);
+                const { data: orderData } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
+                if (orderData && orderData.length > 0) setOrders(orderData);
             } catch (err) {
                 console.error('Error fetching admin data:', err);
-                showMessage(`Error loading data: ${err.message || 'Unknown error'}`);
             }
         };
         fetchAdminData();
     }, []);
 
-    // --- HELPERS ---
-
-    // --- HELPER FUNC ---
-    const handleFileUpload = async (e, methodId) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = async () => {
-                const qr_url = reader.result;
-                const { error } = await supabase.from('payment_settings').update({ qr_url }).eq('id', methodId);
-                if (error) {
-                    console.error(error);
-                    showMessage(`Error saving QR code: ${error.message}`);
-                    return;
-                }
-                setPaymentSettings(prev => prev.map(m => m.id === methodId ? { ...m, qr_url } : m));
-                showMessage('QR code updated!');
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-
     const showMessage = (msg) => {
         setMessage(msg);
-        setTimeout(() => setMessage(''), 3000);
+        setTimeout(() => setMessage(''), 3500);
     };
 
     const handleLogout = () => {
@@ -160,7 +127,312 @@ const AdminDashboard = () => {
         navigate('/admin');
     };
 
-    // --- COMPONENT: MENU MANAGER ---
+    // ─────────────────────────────────────────────────────────────
+    // COMPONENT 1: INVENTORY MANAGER (DEDICATED STOCK CONTROL CENTER)
+    // ─────────────────────────────────────────────────────────────
+    const InventoryManager = () => {
+        const [searchTerm, setSearchTerm] = useState('');
+        const [filterCategory, setFilterCategory] = useState('all');
+        const [stockFilter, setStockFilter] = useState('all'); // all, low, out, instock
+        const [localStockState, setLocalStockState] = useState({});
+        const [isSaving, setIsSaving] = useState(false);
+
+        useEffect(() => {
+            const stateObj = {};
+            items.forEach(item => {
+                stateObj[item.id] = {
+                    stock: item.stock ?? 0,
+                    low_stock_threshold: item.low_stock_threshold || item.lowStockThreshold || 5,
+                    out_of_stock: Boolean(item.out_of_stock || item.stock === 0),
+                    unit: item.unit || 'kg'
+                };
+            });
+            setLocalStockState(stateObj);
+        }, [items]);
+
+        const updateItemStock = (id, field, value) => {
+            setLocalStockState(prev => {
+                const current = prev[id] || { stock: 0, low_stock_threshold: 5, out_of_stock: false, unit: 'kg' };
+                let updated = { ...current, [field]: value };
+                if (field === 'stock') {
+                    const stockNum = Math.max(0, Number(value));
+                    updated.stock = stockNum;
+                    if (stockNum === 0) updated.out_of_stock = true;
+                    else if (stockNum > 0 && current.out_of_stock) updated.out_of_stock = false;
+                }
+                return { ...prev, [id]: updated };
+            });
+        };
+
+        const adjustStock = (id, delta) => {
+            const currentStock = localStockState[id]?.stock ?? 0;
+            const newStock = Math.max(0, currentStock + delta);
+            updateItemStock(id, 'stock', newStock);
+        };
+
+        const saveIndividualStock = async (item) => {
+            const stockData = localStockState[item.id];
+            if (!stockData) return;
+
+            const updatePayload = {
+                stock: Number(stockData.stock),
+                low_stock_threshold: Number(stockData.low_stock_threshold),
+                out_of_stock: Boolean(stockData.out_of_stock || stockData.stock === 0)
+            };
+
+            const { data, error } = await supabase.from('menu_items').update(updatePayload).eq('id', item.id).select().single();
+            if (error) {
+                console.error(error);
+                showMessage(`Error saving stock for ${item.name}: ${error.message}`);
+                return;
+            }
+
+            setItems(items.map(i => i.id === item.id ? { ...i, ...updatePayload } : i));
+            showMessage(`✅ Stock updated for "${item.name}"!`);
+        };
+
+        const saveAllInventory = async () => {
+            setIsSaving(true);
+            try {
+                const updates = items.map(item => {
+                    const stockData = localStockState[item.id] || {};
+                    return {
+                        id: item.id,
+                        stock: Number(stockData.stock ?? item.stock ?? 0),
+                        low_stock_threshold: Number(stockData.low_stock_threshold ?? item.low_stock_threshold ?? 5),
+                        out_of_stock: Boolean(stockData.out_of_stock || Number(stockData.stock) === 0)
+                    };
+                });
+
+                for (const u of updates) {
+                    await supabase.from('menu_items').update({
+                        stock: u.stock,
+                        low_stock_threshold: u.low_stock_threshold,
+                        out_of_stock: u.out_of_stock
+                    }).eq('id', u.id);
+                }
+
+                setItems(items.map(item => {
+                    const stockData = localStockState[item.id] || {};
+                    return {
+                        ...item,
+                        stock: Number(stockData.stock ?? item.stock ?? 0),
+                        low_stock_threshold: Number(stockData.low_stock_threshold ?? item.low_stock_threshold ?? 5),
+                        out_of_stock: Boolean(stockData.out_of_stock || Number(stockData.stock) === 0)
+                    };
+                }));
+
+                showMessage('🎉 All inventory stock levels saved to database successfully!');
+            } catch (err) {
+                console.error(err);
+                showMessage(`Error saving inventory: ${err.message}`);
+            } finally {
+                setIsSaving(false);
+            }
+        };
+
+        // KPI Counts
+        const totalProductsCount = items.length;
+        const lowStockCount = items.filter(i => {
+            const s = localStockState[i.id]?.stock ?? i.stock ?? 0;
+            const th = localStockState[i.id]?.low_stock_threshold ?? i.low_stock_threshold ?? 5;
+            const isOut = localStockState[i.id]?.out_of_stock || s === 0;
+            return !isOut && s > 0 && s <= th;
+        }).length;
+        const outOfStockCount = items.filter(i => {
+            const s = localStockState[i.id]?.stock ?? i.stock ?? 0;
+            const isOut = localStockState[i.id]?.out_of_stock || s === 0;
+            return isOut;
+        }).length;
+        const inStockCount = totalProductsCount - lowStockCount - outOfStockCount;
+
+        // Filtering
+        const filteredInventory = items.filter(item => {
+            const matchesSearch = (item.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesCat = filterCategory === 'all' || item.category_id === filterCategory;
+
+            const s = localStockState[item.id]?.stock ?? item.stock ?? 0;
+            const th = localStockState[item.id]?.low_stock_threshold ?? item.low_stock_threshold ?? 5;
+            const isOut = localStockState[item.id]?.out_of_stock || s === 0;
+            const isLow = !isOut && s > 0 && s <= th;
+
+            let matchesStock = true;
+            if (stockFilter === 'low') matchesStock = isLow;
+            if (stockFilter === 'out') matchesStock = isOut;
+            if (stockFilter === 'instock') matchesStock = !isOut && !isLow;
+
+            return matchesSearch && matchesCat && matchesStock;
+        });
+
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* KPI Metrics Summary Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                    <div style={{ background: 'white', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Products</div>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#0f172a', margin: '4px 0' }}>{totalProductsCount}</div>
+                        <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Store catalog items</span>
+                    </div>
+
+                    <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '18px', border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🟢 Good Stock</div>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#15803d', margin: '4px 0' }}>{inStockCount}</div>
+                        <span style={{ fontSize: '0.78rem', color: '#166534' }}>Sufficient quantity</span>
+                    </div>
+
+                    <div style={{ background: '#fffbe6', padding: '20px', borderRadius: '18px', border: '1px solid #fef08a' }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#854d0e', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠️ Low Stock Alert</div>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#b45309', margin: '4px 0' }}>{lowStockCount}</div>
+                        <span style={{ fontSize: '0.78rem', color: '#854d0e' }}>Needs replenishment</span>
+                    </div>
+
+                    <div style={{ background: '#fef2f2', padding: '20px', borderRadius: '18px', border: '1px solid #fecaca' }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🚫 Out of Stock</div>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#dc2626', margin: '4px 0' }}>{outOfStockCount}</div>
+                        <span style={{ fontSize: '0.78rem', color: '#991b1b' }}>Hidden from buyers</span>
+                    </div>
+                </div>
+
+                {/* Main Inventory Panel */}
+                <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                        <div>
+                            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>📦 Stock & Inventory Control Center</h2>
+                            <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>Manage stock levels, edit alert thresholds, and toggle stock availability per product.</p>
+                        </div>
+                        <button onClick={saveAllInventory} disabled={isSaving} style={{ padding: '12px 24px', borderRadius: '12px', background: 'var(--primary)', color: 'white', fontWeight: 800, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(30,139,0,0.3)' }}>
+                            <Save size={18} /> {isSaving ? 'Saving Updates...' : 'Save All Inventory Updates'}
+                        </button>
+                    </div>
+
+                    {/* Filter Bar */}
+                    <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
+                            <button onClick={() => setStockFilter('all')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'all' ? 'white' : 'transparent', color: stockFilter === 'all' ? '#0f172a' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer', boxShadow: stockFilter === 'all' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>All ({items.length})</button>
+                            <button onClick={() => setStockFilter('low')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'low' ? '#fef3c7' : 'transparent', color: stockFilter === 'low' ? '#92400e' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>⚠️ Low Stock ({lowStockCount})</button>
+                            <button onClick={() => setStockFilter('out')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'out' ? '#fee2e2' : 'transparent', color: stockFilter === 'out' ? '#991b1b' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>🚫 Out of Stock ({outOfStockCount})</button>
+                        </div>
+
+                        <input
+                            type="text"
+                            placeholder="Search product..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{ ...inputStyle, width: '220px', padding: '8px 14px', fontSize: '0.85rem' }}
+                        />
+
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            style={{ ...inputStyle, width: '190px', padding: '8px 14px', fontSize: '0.85rem' }}
+                        >
+                            <option value="all">All Categories</option>
+                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Table */}
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px' }}>
+                            <thead>
+                                <tr style={{ textAlign: 'left', color: '#64748b', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    <th style={{ padding: '12px' }}>Product</th>
+                                    <th style={{ padding: '12px' }}>Category</th>
+                                    <th style={{ padding: '12px' }}>Stock Quantity (Quick Adjust)</th>
+                                    <th style={{ padding: '12px' }}>Alert Threshold</th>
+                                    <th style={{ padding: '12px' }}>Status</th>
+                                    <th style={{ padding: '12px', textAlign: 'right' }}>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredInventory.length === 0 ? (
+                                    <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No inventory records match your filter.</td></tr>
+                                ) : filteredInventory.map(item => {
+                                    const stockData = localStockState[item.id] || { stock: item.stock ?? 0, low_stock_threshold: item.low_stock_threshold || 5, out_of_stock: Boolean(item.out_of_stock || item.stock === 0), unit: item.unit || 'kg' };
+                                    const s = stockData.stock;
+                                    const th = stockData.low_stock_threshold;
+                                    const isOut = stockData.out_of_stock || s === 0;
+                                    const isLow = !isOut && s > 0 && s <= th;
+
+                                    return (
+                                        <tr key={item.id} style={{ background: isOut ? '#fff1f2' : isLow ? '#fffbeb' : '#f8fafc', transition: 'all 0.2s' }}>
+                                            <td style={{ padding: '12px 15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                    <img src={item.image} style={{ width: '42px', height: '42px', borderRadius: '8px', objectFit: 'cover' }} alt="" />
+                                                    <div>
+                                                        <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>{item.name}</div>
+                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Unit: {stockData.unit}</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '12px' }}>
+                                                <span style={{ padding: '4px 10px', background: '#e2e8f0', borderRadius: '16px', fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>
+                                                    {categories.find(c => c.id === item.category_id)?.name || 'Uncategorized'}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px' }}>
+                                                {/* Quick Adjust Buttons */}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <button onClick={() => adjustStock(item.id, -10)} style={quickBtnStyle}>-10</button>
+                                                    <button onClick={() => adjustStock(item.id, -1)} style={quickBtnStyle}>-1</button>
+                                                    <input
+                                                        type="number"
+                                                        value={s}
+                                                        onChange={(e) => updateItemStock(item.id, 'stock', e.target.value)}
+                                                        style={{ width: '70px', padding: '6px', textAlign: 'center', fontWeight: 800, fontSize: '0.95rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }}
+                                                    />
+                                                    <button onClick={() => adjustStock(item.id, 1)} style={quickBtnStyle}>+1</button>
+                                                    <button onClick={() => adjustStock(item.id, 10)} style={quickBtnStyle}>+10</button>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '12px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>≤</span>
+                                                    <input
+                                                        type="number"
+                                                        value={th}
+                                                        onChange={(e) => updateItemStock(item.id, 'low_stock_threshold', Number(e.target.value))}
+                                                        style={{ width: '55px', padding: '5px', textAlign: 'center', fontSize: '0.85rem', fontWeight: 700, borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                                                    />
+                                                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>{stockData.unit}</span>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '12px' }}>
+                                                <button
+                                                    onClick={() => updateItemStock(item.id, 'out_of_stock', !isOut)}
+                                                    style={{
+                                                        padding: '5px 12px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                                                        fontWeight: 800, fontSize: '0.78rem',
+                                                        background: isOut ? '#fee2e2' : isLow ? '#fef3c7' : '#dcfce7',
+                                                        color: isOut ? '#991b1b' : isLow ? '#92400e' : '#166534',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    {isOut ? '🔴 Out of Stock' : isLow ? '⚠️ Low Stock' : '🟢 In Stock'}
+                                                </button>
+                                            </td>
+                                            <td style={{ padding: '12px 15px', borderTopRightRadius: '12px', borderBottomRightRadius: '12px', textAlign: 'right' }}>
+                                                <button
+                                                    onClick={() => saveIndividualStock(item)}
+                                                    style={{ padding: '6px 14px', borderRadius: '8px', background: '#059669', color: 'white', border: 'none', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}
+                                                >
+                                                    Save Stock
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // ─────────────────────────────────────────────────────────────
+    // COMPONENT 2: MENU MANAGER (PRODUCT CATALOG MANAGEMENT)
+    // ─────────────────────────────────────────────────────────────
     const MenuManager = () => {
         const [editingItem, setEditingItem] = useState(null);
         const [searchTerm, setSearchTerm] = useState('');
@@ -185,8 +457,6 @@ const AdminDashboard = () => {
                 description: formData.get('description'),
                 price: Number(formData.get('price')),
                 promo_price: formData.get('promoPrice') ? Number(formData.get('promoPrice')) : null,
-                stock: Number(formData.get('stock') || 0),
-                low_stock_threshold: Number(formData.get('lowStockThreshold') || 5),
                 unit: formData.get('unit') || 'kg',
                 min_order_note: formData.get('minOrderNote') || '',
                 category_id: formData.get('categoryId'),
@@ -194,6 +464,8 @@ const AdminDashboard = () => {
                 variations: tempVariations,
                 flavors: tempFlavors,
                 addons: tempAddons,
+                stock: Number(formData.get('stock') || 0),
+                low_stock_threshold: Number(formData.get('lowStockThreshold') || 5),
                 out_of_stock: formData.get('outOfStock') === 'on' || Number(formData.get('stock') || 0) === 0
             };
 
@@ -201,48 +473,26 @@ const AdminDashboard = () => {
             if (editingItem.id === 'new') {
                 if (!itemData.category_id) { showMessage('Please select a category first.'); return; }
                 const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
-                if (error) { console.error(error); showMessage(`Error saving: ${error.message}`); return; }
+                if (error) { console.error(error); showMessage(`Error saving product: ${error.message}`); return; }
                 finalItem = data;
                 setItems([...items, finalItem]);
             } else {
                 const { data, error } = await supabase.from('menu_items').update(itemData).eq('id', editingItem.id).select().single();
-                if (error) { console.error(error); showMessage(`Error updating: ${error.message}`); return; }
+                if (error) { console.error(error); showMessage(`Error updating product: ${error.message}`); return; }
                 finalItem = data;
                 setItems(items.map(i => i.id === finalItem.id ? finalItem : i));
             }
 
             setEditingItem(null);
-            showMessage('Product & inventory saved successfully!');
+            showMessage('Product catalog details saved successfully!');
         };
 
         const deleteItem = async (id) => {
-            if (window.confirm('Delete this product?')) {
+            if (window.confirm('Are you sure you want to delete this product?')) {
                 const { error } = await supabase.from('menu_items').delete().eq('id', id);
-                if (error) { console.error(error); showMessage(`Error deleting: ${error.message}`); return; }
+                if (error) { console.error(error); showMessage(`Error deleting product: ${error.message}`); return; }
                 setItems(items.filter(i => i.id !== id));
                 showMessage('Product deleted.');
-            }
-        };
-
-        const moveItem = async (id, direction) => {
-            const index = items.findIndex(i => i.id === id);
-            if (index === -1) return;
-            const newIndex = direction === 'up' ? index - 1 : index + 1;
-            if (newIndex < 0 || newIndex >= items.length) return;
-
-            const newItems = [...items];
-            const [removed] = newItems.splice(index, 1);
-            newItems.splice(newIndex, 0, removed);
-
-            const updatedItems = newItems.map((item, idx) => ({ ...item, sort_order: idx }));
-            setItems(updatedItems);
-
-            const { error } = await supabase.from('menu_items').upsert(updatedItems);
-            if (error) {
-                console.error('Error syncing order:', error);
-                showMessage('Error saving item order.');
-            } else {
-                showMessage('Item order updated!');
             }
         };
 
@@ -252,565 +502,251 @@ const AdminDashboard = () => {
             return matchesSearch && matchesCategory;
         });
 
-        const lowStockItems = items.filter(i => (i.stock !== undefined && i.stock <= (i.low_stock_threshold || i.lowStockThreshold || 5)));
-
-        // Render List
         if (!editingItem) return (
-            <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-                {/* Low Stock Alert Section */}
-                {lowStockItems.length > 0 && (
-                    <div style={{ background: '#fef2f2', border: '2px solid #fca5a5', padding: '20px', borderRadius: '16px', marginBottom: '30px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#991b1b', marginBottom: '10px' }}>
-                            <span style={{ fontSize: '1.4rem' }}>⚠️</span>
-                            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Low Stock Alert ({lowStockItems.length} Products)</h3>
-                        </div>
-                        <p style={{ fontSize: '0.9rem', color: '#7f1d1d', margin: '0 0 15px' }}>The following items are running low on stock and need to be replenished soon:</p>
-                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                            {lowStockItems.map(item => (
-                                <div key={item.id} style={{ background: 'white', border: '1px solid #f87171', padding: '8px 15px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1f2937' }}>{item.name}</span>
-                                    <span style={{ background: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 800 }}>
-                                        {item.stock} {item.unit || 'kg'} left
-                                    </span>
-                                    <button onClick={() => setEditingItem(item)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}>Update Stock</button>
-                                </div>
-                            ))}
-                        </div>
+            <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>🍽️ Product Catalog & Menu Editor</h2>
+                        <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>Create, update pricing, descriptions, images, and category assignments.</p>
                     </div>
-                )}
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
-                    <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Inventory & Menu List</h2>
-                    <div style={{ display: 'flex', gap: '10px', flex: 1, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                         <input
                             type="text"
-                            placeholder="Search products..."
+                            placeholder="Search catalog..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            style={{ ...inputStyle, width: '250px' }}
+                            style={{ ...inputStyle, width: '220px', padding: '8px 14px', fontSize: '0.85rem' }}
                         />
                         <select
                             value={filterCategory}
                             onChange={(e) => setFilterCategory(e.target.value)}
-                            style={{ ...inputStyle, width: '180px' }}
+                            style={{ ...inputStyle, width: '180px', padding: '8px 14px', fontSize: '0.85rem' }}
                         >
                             <option value="all">All Categories</option>
                             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
-                        <button onClick={() => setEditingItem({ id: 'new', category_id: categories[0]?.id, stock: 20, low_stock_threshold: 5, unit: 'kg' })} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px' }}>
-                            <Plus size={18} /> Add Product
+                        <button onClick={() => setEditingItem({ id: 'new', category_id: categories[0]?.id, stock: 20, low_stock_threshold: 5, unit: 'kg' })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+                            <Plus size={18} /> Add New Product
                         </button>
                     </div>
                 </div>
 
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 10px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px' }}>
                         <thead>
-                            <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
-                                <th style={{ padding: '10px' }}>Product</th>
-                                <th style={{ padding: '10px' }}>Category</th>
-                                <th style={{ padding: '10px' }}>Price</th>
-                                <th style={{ padding: '10px' }}>Stock Level</th>
-                                <th style={{ padding: '10px' }}>Status</th>
-                                <th style={{ padding: '10px' }}>Actions</th>
+                            <tr style={{ textAlign: 'left', color: '#64748b', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                <th style={{ padding: '12px' }}>Product</th>
+                                <th style={{ padding: '12px' }}>Category</th>
+                                <th style={{ padding: '12px' }}>Price / Unit</th>
+                                <th style={{ padding: '12px' }}>Min Order Tag</th>
+                                <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredItems.length === 0 ? (
-                                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No products found matching your criteria.</td></tr>
-                            ) : filteredItems.map(item => {
-                                const isLow = item.stock !== undefined && item.stock <= (item.low_stock_threshold || item.lowStockThreshold || 5);
-                                const isOut = item.out_of_stock || item.stock === 0;
-
-                                return (
-                                    <tr key={item.id} style={{ background: isOut ? '#fef2f2' : isLow ? '#fffbe6' : '#f8fafc' }}>
-                                        <td style={{ padding: '15px', display: 'flex', alignItems: 'center', gap: '15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
-                                            <img src={item.image} style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} />
+                                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No products found in catalog.</td></tr>
+                            ) : filteredItems.map(item => (
+                                <tr key={item.id} style={{ background: '#f8fafc' }}>
+                                    <td style={{ padding: '12px 15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <img src={item.image} style={{ width: '45px', height: '45px', borderRadius: '10px', objectFit: 'cover' }} alt="" />
                                             <div>
-                                                <div style={{ fontWeight: 700 }}>{item.name}</div>
-                                                {item.min_order_note && <div style={{ fontSize: '0.75rem', color: 'var(--primary-dark)', fontWeight: 600 }}>{item.min_order_note}</div>}
+                                                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>{item.name}</div>
+                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.description || 'No description'}</div>
                                             </div>
-                                        </td>
-                                        <td style={{ padding: '15px' }}>
-                                            <span style={{ padding: '4px 10px', background: '#e2e8f0', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600 }}>
-                                                {categories.find(c => c.id === item.category_id)?.name || 'Uncategorized'}
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '12px' }}>
+                                        <span style={{ padding: '4px 10px', background: '#e2e8f0', borderRadius: '16px', fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>
+                                            {categories.find(c => c.id === item.category_id)?.name || 'Uncategorized'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '12px' }}>
+                                        {item.promo_price ? (
+                                            <div>
+                                                <span style={{ textDecoration: 'line-through', color: '#94a3b8', fontSize: '0.75rem', marginRight: '4px' }}>₱{item.price}</span>
+                                                <span style={{ color: '#dc2626', fontWeight: 800, fontSize: '0.92rem' }}>₱{item.promo_price} /{item.unit || 'kg'}</span>
+                                            </div>
+                                        ) : (
+                                            <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>₱{item.price} /{item.unit || 'kg'}</span>
+                                        )}
+                                    </td>
+                                    <td style={{ padding: '12px' }}>
+                                        {item.min_order_note ? (
+                                            <span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 800 }}>
+                                                {item.min_order_note}
                                             </span>
-                                        </td>
-                                        <td style={{ padding: '15px' }}>
-                                            {item.promo_price ? (
-                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.8rem' }}>₱{item.price}</span>
-                                                    <span style={{ color: '#ef4444', fontWeight: 700 }}>₱{item.promo_price}</span>
-                                                </div>
-                                            ) : <span style={{ fontWeight: 700 }}>₱{item.price} /{item.unit || 'kg'}</span>}
-                                        </td>
-                                        <td style={{ padding: '15px' }}>
-                                            <div style={{ fontWeight: 800, color: isOut ? '#dc2626' : isLow ? '#d97706' : '#059669', fontSize: '0.95rem' }}>
-                                                {item.stock !== undefined ? `${item.stock} ${item.unit || 'kg'}` : 'N/A'}
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                Alert at ≤ {item.low_stock_threshold || item.lowStockThreshold || 5} {item.unit || 'kg'}
-                                            </div>
-                                        </td>
-                                        <td style={{ padding: '15px' }}>
-                                            {isOut ? (
-                                                <span style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 800 }}>Out of Stock</span>
-                                            ) : isLow ? (
-                                                <span style={{ background: '#fef3c7', color: '#92400e', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 800 }}>⚠️ Low Stock</span>
-                                            ) : (
-                                                <span style={{ background: '#dcfce7', color: '#166534', padding: '4px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 800 }}>In Stock</span>
-                                            )}
-                                        </td>
-                                        <td style={{ padding: '15px', borderTopRightRadius: '12px', borderBottomRightRadius: '12px' }}>
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                <button onClick={() => moveItem(item.id, 'up')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Move Up"><ChevronUp size={18} /></button>
-                                                <button onClick={() => moveItem(item.id, 'down')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }} title="Move Down"><ChevronDown size={18} /></button>
-                                                <button onClick={() => setEditingItem(item)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--primary)' }} title="Edit Product & Inventory"><Edit2 size={18} /></button>
-                                                <button onClick={() => deleteItem(item.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444' }} title="Delete"><Trash2 size={18} /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                                        ) : <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>-</span>}
+                                    </td>
+                                    <td style={{ padding: '12px 15px', borderTopRightRadius: '12px', borderBottomRightRadius: '12px', textAlign: 'right' }}>
+                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                            <button onClick={() => setEditingItem(item)} style={{ padding: '6px 12px', borderRadius: '8px', background: '#f1f5f9', color: 'var(--primary)', border: 'none', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <Edit2 size={15} /> Edit
+                                            </button>
+                                            <button onClick={() => deleteItem(item.id)} style={{ padding: '6px 10px', borderRadius: '8px', background: '#fee2e2', color: '#ef4444', border: 'none', cursor: 'pointer' }} title="Delete">
+                                                <Trash2 size={15} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
             </div>
         );
 
-        // Render Editor (Simplified for brevity but functional)
+        // Edit/Add Form
         return (
-            <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                    <h3>{editingItem.id === 'new' ? 'New Product' : 'Edit Product'}</h3>
-                    <button onClick={() => setEditingItem(null)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X /></button>
+            <div style={{ background: 'white', padding: '30px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 900, color: '#0c250d' }}>{editingItem.id === 'new' ? '✨ Create New Product' : `✏️ Edit Product: ${editingItem.name}`}</h3>
+                    <button onClick={() => setEditingItem(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24} /></button>
                 </div>
                 <form onSubmit={handleSubmit}>
-                    <div style={{ display: 'grid', gap: '15px', marginBottom: '20px' }}>
-                        <input name="name" defaultValue={editingItem.name} placeholder="Product Name" required style={inputStyle} />
-                        <textarea name="description" defaultValue={editingItem.description} placeholder="Description" style={inputStyle} />
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
+                    <div style={{ display: 'grid', gap: '18px', marginBottom: '24px' }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Product Name</label>
+                            <input name="name" defaultValue={editingItem.name} placeholder="e.g. Beef Shortloin St. Helens" required style={inputStyle} />
+                        </div>
+
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Category</label>
+                            <select name="categoryId" defaultValue={editingItem.category_id} style={inputStyle} required>
+                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Description</label>
+                            <textarea name="description" defaultValue={editingItem.description} placeholder="Short product description..." style={{ ...inputStyle, minHeight: '80px' }} />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '15px' }}>
                             <div>
-                                <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Current Stock</label>
-                                <input name="stock" type="number" defaultValue={editingItem.stock ?? 20} placeholder="Stock Qty" required style={inputStyle} />
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Price (₱)</label>
+                                <input name="price" type="number" step="0.01" defaultValue={editingItem.price} placeholder="1850" required style={inputStyle} />
                             </div>
                             <div>
-                                <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Low Stock Threshold Alert</label>
-                                <input name="lowStockThreshold" type="number" defaultValue={editingItem.low_stock_threshold || editingItem.lowStockThreshold || 5} placeholder="Alert Threshold" required style={inputStyle} />
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Promo Price (₱ - Optional)</label>
+                                <input name="promoPrice" type="number" step="0.01" defaultValue={editingItem.promo_price || ''} placeholder="Discount price" style={inputStyle} />
                             </div>
                             <div>
-                                <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Unit (kg, slab, box, sack)</label>
-                                <input name="unit" defaultValue={editingItem.unit || 'kg'} placeholder="e.g. kg, slab, box" required style={inputStyle} />
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Unit</label>
+                                <input name="unit" defaultValue={editingItem.unit || 'kg'} placeholder="kg, slab, box, sack" required style={inputStyle} />
                             </div>
                         </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Current Stock Qty</label>
+                                <input name="stock" type="number" defaultValue={editingItem.stock ?? 20} placeholder="Stock level" required style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Low Stock Alert Threshold</label>
+                                <input name="lowStockThreshold" type="number" defaultValue={editingItem.low_stock_threshold || editingItem.lowStockThreshold || 5} placeholder="Alert limit" required style={inputStyle} />
+                            </div>
+                        </div>
+
                         <div>
-                            <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '5px' }}>Minimum Order Note / Tag (Optional)</label>
+                            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Minimum Order Note / Tag (Optional)</label>
                             <input name="minOrderNote" defaultValue={editingItem.min_order_note || editingItem.minOrderNote || ''} placeholder="e.g. Minimum 1 Slab, Wholesale min 1 box" style={inputStyle} />
                         </div>
-                        <select name="categoryId" defaultValue={editingItem.category_id} style={inputStyle}>
-                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <label style={{ fontWeight: 600 }}>Product Image</label>
-                            {editingItem.image && <img src={editingItem.image} style={{ width: '100px', height: '100px', borderRadius: '12px', objectFit: 'cover' }} />}
-                            <input type="file" accept="image/*" onChange={(e) => {
-                                const file = e.target.files[0];
-                                if (file) {
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => setEditingItem({ ...editingItem, image: reader.result });
-                                    reader.readAsDataURL(file);
-                                }
-                            }} style={inputStyle} />
+
+                        <div>
+                            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Product Image</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                {editingItem.image && <img src={editingItem.image} style={{ width: '70px', height: '70px', borderRadius: '10px', objectFit: 'cover' }} alt="" />}
+                                <input type="file" accept="image/*" onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (file) {
+                                        const reader = new FileReader();
+                                        reader.onloadend = () => setEditingItem({ ...editingItem, image: reader.result });
+                                        reader.readAsDataURL(file);
+                                    }
+                                }} style={inputStyle} />
+                            </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <input name="outOfStock" type="checkbox" defaultChecked={editingItem.out_of_stock} style={{ width: '20px', height: '20px' }} />
-                            <label style={{ fontWeight: 600 }}>Mark as Out of Stock</label>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f8fafc', padding: '12px', borderRadius: '10px' }}>
+                            <input name="outOfStock" type="checkbox" defaultChecked={editingItem.out_of_stock} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                            <label style={{ fontWeight: 700, fontSize: '0.9rem', color: '#334155', cursor: 'pointer' }}>Mark product as Out of Stock</label>
                         </div>
                     </div>
 
-                    {/* Variations */}
-                    <SectionLabel title="Variations" onAdd={() => setTempVariations([...tempVariations, { name: 'Size', price: 0 }])} />
-                    {tempVariations.map((v, i) => (
-                        <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
-                            <input value={v.name} onChange={e => { const n = [...tempVariations]; n[i].name = e.target.value; setTempVariations(n); }} placeholder="Name" style={inputStyle} />
-                            <input type="number" value={v.price} onChange={e => { const n = [...tempVariations]; n[i].price = Number(e.target.value); setTempVariations(n); }} placeholder="Price" style={inputStyle} />
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
-                                <input type="checkbox" checked={v.disabled} onChange={e => { const n = [...tempVariations]; n[i].disabled = e.target.checked; setTempVariations(n); }} />
-                                <label style={{ fontSize: '0.75rem' }}>Disabled</label>
-                            </div>
-                            <button type="button" onClick={() => setTempVariations(tempVariations.filter((_, idx) => idx !== i))} style={{ color: 'red', border: 'none', background: 'none' }}><X size={18} /></button>
-                        </div>
-                    ))}
-
-                    {/* Flavors */}
-                    <SectionLabel title="Flavors" onAdd={() => setTempFlavors([...tempFlavors, { name: '', disabled: false }])} />
-                    {tempFlavors.map((f, i) => {
-                        const name = typeof f === 'string' ? f : f.name;
-                        const disabled = typeof f === 'object' ? f.disabled : false;
-                        return (
-                            <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
-                                <input
-                                    value={name}
-                                    onChange={e => {
-                                        const n = [...tempFlavors];
-                                        if (typeof n[i] === 'string') n[i] = { name: e.target.value, disabled: false };
-                                        else n[i] = { ...n[i], name: e.target.value };
-                                        setTempFlavors(n);
-                                    }}
-                                    placeholder="Flavor Name (e.g. Buffalo)"
-                                    style={inputStyle}
-                                />
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={disabled}
-                                        onChange={e => {
-                                            const n = [...tempFlavors];
-                                            if (typeof n[i] === 'string') n[i] = { name: n[i], disabled: e.target.checked };
-                                            else n[i] = { ...n[i], disabled: e.target.checked };
-                                            setTempFlavors(n);
-                                        }}
-                                    />
-                                    <label style={{ fontSize: '0.75rem' }}>Disabled</label>
-                                </div>
-                                <button type="button" onClick={() => setTempFlavors(tempFlavors.filter((_, idx) => idx !== i))} style={{ color: 'red', border: 'none', background: 'none' }}><X size={18} /></button>
-                            </div>
-                        );
-                    })}
-
-                    {/* Addons */}
-                    <SectionLabel title="Add-ons" onAdd={() => setTempAddons([...tempAddons, { name: 'Addon', price: 0 }])} />
-                    {tempAddons.map((v, i) => (
-                        <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
-                            <input value={v.name} onChange={e => { const n = [...tempAddons]; n[i].name = e.target.value; setTempAddons(n); }} placeholder="Name" style={inputStyle} />
-                            <input type="number" value={v.price} onChange={e => { const n = [...tempAddons]; n[i].price = Number(e.target.value); setTempAddons(n); }} placeholder="Price" style={inputStyle} />
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
-                                <input type="checkbox" checked={v.disabled} onChange={e => { const n = [...tempAddons]; n[i].disabled = e.target.checked; setTempAddons(n); }} />
-                                <label style={{ fontSize: '0.75rem' }}>Disabled</label>
-                            </div>
-                            <button type="button" onClick={() => setTempAddons(tempAddons.filter((_, idx) => idx !== i))} style={{ color: 'red', border: 'none', background: 'none' }}><X size={18} /></button>
-                        </div>
-                    ))}
-
-                    <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '20px' }}>Save Product</button>
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={() => setEditingItem(null)} style={{ padding: '12px 20px', borderRadius: '10px', border: '1px solid #cbd5e1', background: 'white', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                        <button type="submit" style={{ padding: '12px 28px', borderRadius: '10px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,139,0,0.3)' }}>
+                            Save Product Details
+                        </button>
+                    </div>
                 </form>
             </div>
         );
     };
 
-    // --- COMPONENT: CATEGORY MANAGER ---
+    // ─────────────────────────────────────────────────────────────
+    // OTHER EXISTING SUB-COMPONENTS (CATEGORIES, ORDERS, SETTINGS)
+    // ─────────────────────────────────────────────────────────────
     const CategoryManager = () => {
-        const [newCat, setNewCat] = useState('');
-        const [editingCatId, setEditingCatId] = useState(null);
-        const [editCatName, setEditCatName] = useState('');
+        const [editingCat, setEditingCat] = useState(null);
 
-        const addCategory = async (e) => {
+        const handleSaveCat = async (e) => {
             e.preventDefault();
-            if (!newCat.trim()) return;
-            const { data, error } = await supabase.from('categories').insert([{ name: newCat, sort_order: categories.length }]).select().single();
-            if (error) { console.error(error); showMessage(`Error adding category: ${error.message}`); return; }
-            setCategories([...categories, data]);
-            setNewCat('');
-            showMessage('Category added!');
-        };
+            const formData = new FormData(e.target);
+            const name = formData.get('name');
 
-        const startEdit = (cat) => {
-            setEditingCatId(cat.id);
-            setEditCatName(cat.name);
-        };
-
-        const saveEdit = async (id) => {
-            if (!editCatName.trim()) return;
-            const { data, error } = await supabase.from('categories').update({ name: editCatName }).eq('id', id).select().single();
-            if (error) { console.error(error); showMessage(`Error updating: ${error.message}`); return; }
-            setCategories(categories.map(c => c.id === id ? data : c));
-            setEditingCatId(null);
-            showMessage('Category updated!');
-        };
-
-        const moveCategory = async (id, direction) => {
-            const index = categories.findIndex(c => c.id === id);
-            if (index === -1) return;
-            const newIndex = direction === 'up' ? index - 1 : index + 1;
-            if (newIndex < 0 || newIndex >= categories.length) return;
-
-            const newCats = [...categories];
-            const [removed] = newCats.splice(index, 1);
-            newCats.splice(newIndex, 0, removed);
-
-            const updatedCats = newCats.map((cat, idx) => ({ ...cat, sort_order: idx }));
-            setCategories(updatedCats);
-
-            const { error } = await supabase.from('categories').upsert(updatedCats);
-            if (error) {
-                console.error('Error syncing order:', error);
-                showMessage('Error saving category order.');
+            if (editingCat.id === 'new') {
+                const { data, error } = await supabase.from('categories').insert([{ name, sort_order: categories.length + 1 }]).select().single();
+                if (error) { showMessage(`Error: ${error.message}`); return; }
+                setCategories([...categories, data]);
             } else {
-                showMessage('Category order updated!');
+                const { data, error } = await supabase.from('categories').update({ name }).eq('id', editingCat.id).select().single();
+                if (error) { showMessage(`Error: ${error.message}`); return; }
+                setCategories(categories.map(c => c.id === data.id ? data : c));
             }
+            setEditingCat(null);
+            showMessage('Category saved!');
         };
 
-        const deleteCategory = async (id) => {
-            if (items.some(i => i.category_id === id)) {
-                alert('Cannot delete category because it has products.');
-                return;
-            }
-            if (window.confirm('Delete category?')) {
+        const deleteCat = async (id) => {
+            if (window.confirm('Delete category? Products under this category might lose their link.')) {
                 const { error } = await supabase.from('categories').delete().eq('id', id);
-                if (error) { console.error(error); showMessage(`Error deleting: ${error.message}`); return; }
+                if (error) { showMessage(`Error: ${error.message}`); return; }
                 setCategories(categories.filter(c => c.id !== id));
                 showMessage('Category deleted.');
             }
         };
 
         return (
-            <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px' }}>
-                <h2 style={{ marginBottom: '30px' }}>Categories Management</h2>
-                <form onSubmit={addCategory} style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
-                    <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="New Category Name (e.g. Desserts)" style={{ ...inputStyle, flex: 1 }} />
-                    <button type="submit" className="btn-primary" style={{ padding: '10px 25px' }}>Add Category</button>
-                </form>
-                <div style={{ display: 'grid', gap: '15px' }}>
-                    {categories.map(c => (
-                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', background: '#f8fafc', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-                            {editingCatId === c.id ? (
-                                <div style={{ display: 'flex', gap: '10px', flex: 1 }}>
-                                    <input value={editCatName} onChange={e => setEditCatName(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-                                    <button onClick={() => saveEdit(c.id)} className="btn-primary" style={{ padding: '5px 15px' }}>Save</button>
-                                    <button onClick={() => setEditingCatId(null)} style={{ border: '1px solid #cbd5e1', background: 'white', borderRadius: '10px', padding: '5px 15px' }}>Cancel</button>
-                                </div>
-                            ) : (
-                                <>
-                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                        <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{c.name}</span>
-                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{items.filter(i => i.category_id === c.id).length} products</span>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '10px' }}>
-                                        <button onClick={() => moveCategory(c.id, 'up')} style={{ color: 'var(--text-muted)', border: 'none', background: 'none', cursor: 'pointer' }} title="Move Up"><ChevronUp size={20} /></button>
-                                        <button onClick={() => moveCategory(c.id, 'down')} style={{ color: 'var(--text-muted)', border: 'none', background: 'none', cursor: 'pointer' }} title="Move Down"><ChevronDown size={20} /></button>
-                                        <button onClick={() => startEdit(c)} style={{ color: 'var(--primary)', border: 'none', background: 'none', cursor: 'pointer' }} title="Edit"><Edit2 size={20} /></button>
-                                        <button onClick={() => deleteCategory(c.id)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }} title="Delete"><Trash2 size={20} /></button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    };
-
-    // --- COMPONENT: ORDER TYPE MANAGER ---
-    const OrderTypeManager = () => {
-        const FIXED_TYPES = [
-            { id: 'pickup', name: 'Pick Up', defaultActive: true },
-            { id: 'delivery', name: 'Delivery', defaultActive: true }
-        ];
-
-        const [localTypes, setLocalTypes] = useState([]);
-
-        useEffect(() => {
-            // Merge fixed types with db state
-            const merged = FIXED_TYPES.map(ft => {
-                const existing = orderTypes.find(t => t.id === ft.id);
-                return existing ? existing : { ...ft, is_active: ft.defaultActive };
-            });
-            setLocalTypes(merged);
-        }, [orderTypes]);
-
-        const toggleType = async (type) => {
-            const newStatus = !type.is_active;
-
-            // Optimistic update
-            const updated = localTypes.map(t => t.id === type.id ? { ...t, is_active: newStatus, name: type.name } : t);
-            setLocalTypes(updated);
-            setOrderTypes(updated);
-
-            // Update DB
-            const { error } = await supabase.from('order_types').upsert({
-                id: type.id,
-                name: type.name, // Ensure name is saved (e.g. "Take Out")
-                is_active: newStatus
-            });
-
-            if (error) {
-                console.error(error);
-                showMessage(`Error updating: ${error.message}`);
-                // Revert on error would go here
-            } else {
-                showMessage(`${type.name} is now ${newStatus ? 'Active' : 'Inactive'}`);
-            }
-        };
-
-        return (
-            <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px' }}>
-                <h2 style={{ marginBottom: '10px' }}>Order Types Management</h2>
-                <p style={{ color: 'var(--text-muted)', marginBottom: '30px' }}>Manage the availability of service options.</p>
-
-                <div style={{ display: 'grid', gap: '15px' }}>
-                    {localTypes.map(t => (
-                        <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', background: '#f8fafc', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                <div style={{
-                                    width: '40px', height: '40px', borderRadius: '10px',
-                                    background: t.is_active ? 'var(--primary)' : '#cbd5e1',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    color: 'white'
-                                }}>
-
-                                    {t.id === 'pickup' && <ShoppingBag size={20} />}
-                                    {t.id === 'delivery' && <Truck size={20} />}
-                                </div>
-                                <div>
-                                    <span style={{ fontWeight: 700, fontSize: '1.1rem', display: 'block' }}>{t.name}</span>
-                                    <span style={{ fontSize: '0.85rem', color: t.is_active ? '#166534' : 'var(--text-muted)' }}>
-                                        {t.is_active ? 'Currently Available' : 'Unavailable'}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={t.is_active !== false}
-                                    onChange={() => toggleType(t)}
-                                    style={{ opacity: 0, width: 0, height: 0 }}
-                                />
-                                <span style={{
-                                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                                    backgroundColor: t.is_active ? 'var(--primary)' : '#ccc',
-                                    transition: '.4s', borderRadius: '34px'
-                                }}></span>
-                                <span style={{
-                                    position: 'absolute', content: '""', height: '20px', width: '20px', left: '3px', bottom: '3px',
-                                    backgroundColor: 'white', transition: '.4s', borderRadius: '50%',
-                                    transform: t.is_active ? 'translateX(24px)' : 'translateX(0)'
-                                }}></span>
-                            </label>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    };
-
-    // --- COMPONENT: PAYMENT SETTINGS ---
-    const PaymentSettings = () => {
-        const [editingMethodId, setEditingMethodId] = useState(null);
-        const [showAddMethod, setShowAddMethod] = useState(false);
-
-        const handleSaveMethod = async (e, methodId) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const updateData = {
-                name: formData.get('name'),
-                account_number: formData.get('accountNumber'),
-                account_name: formData.get('accountName'),
-            };
-            const { data, error } = await supabase.from('payment_settings').update(updateData).eq('id', methodId).select().single();
-            if (error) { console.error(error); showMessage(`Error updating: ${error.message}`); return; }
-            setPaymentSettings(paymentSettings.map(m => m.id === methodId ? data : m));
-            setEditingMethodId(null);
-            showMessage('Payment method updated!');
-        };
-
-        const handleAddMethod = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const newMethod = {
-                name: formData.get('name'),
-                account_number: formData.get('accountNumber'),
-                account_name: formData.get('accountName'),
-                qr_url: ''
-            };
-            const { data, error } = await supabase.from('payment_settings').insert([newMethod]).select().single();
-            if (error) { console.error(error); showMessage(`Error adding: ${error.message}`); return; }
-            setPaymentSettings([...paymentSettings, data]);
-            setShowAddMethod(false);
-            showMessage('Payment method added!');
-        };
-
-        const deleteMethod = async (id) => {
-            if (window.confirm('Delete this payment method?')) {
-                const { error } = await supabase.from('payment_settings').delete().eq('id', id);
-                if (error) { console.error(error); showMessage(`Error deleting: ${error.message}`); return; }
-                setPaymentSettings(paymentSettings.filter(m => m.id !== id));
-                showMessage('Payment method deleted.');
-            }
-        };
-
-        return (
-            <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                    <h2 style={{ margin: 0 }}>Payment Methods Management</h2>
-                    <button onClick={() => setShowAddMethod(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px' }}>
-                        <Plus size={18} /> Add Method
+            <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>🏷️ Category Management</h2>
+                    <button onClick={() => setEditingCat({ id: 'new', name: '' })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+                        <Plus size={18} /> Add Category
                     </button>
                 </div>
 
-                {showAddMethod && (
-                    <div style={{ background: '#f8fafc', padding: '25px', borderRadius: '15px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                            <h3 style={{ margin: 0 }}>Add New Payment Method</h3>
-                            <button onClick={() => setShowAddMethod(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={20} /></button>
-                        </div>
-                        <form onSubmit={handleAddMethod} style={{ display: 'grid', gap: '15px' }}>
-                            <input name="name" placeholder="Method Name (e.g. Bank Transfer, GCash)" required style={inputStyle} />
-                            <input name="accountNumber" placeholder="Account Number" required style={inputStyle} />
-                            <input name="accountName" placeholder="Account Name" required style={inputStyle} />
-                            <button type="submit" className="btn-primary">Save Method</button>
-                        </form>
-                    </div>
+                {editingCat && (
+                    <form onSubmit={handleSaveCat} style={{ display: 'flex', gap: '10px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '14px' }}>
+                        <input name="name" defaultValue={editingCat.name} placeholder="Category Name (e.g. High End Beef)" required style={inputStyle} />
+                        <button type="submit" style={{ padding: '10px 20px', borderRadius: '10px', background: '#059669', color: 'white', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                        <button type="button" onClick={() => setEditingCat(null)} style={{ padding: '10px 15px', borderRadius: '10px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>Cancel</button>
+                    </form>
                 )}
 
-                <div style={{ display: 'grid', gap: '20px' }}>
-                    {paymentSettings.map(method => (
-                        <div key={method.id} style={{ background: '#f8fafc', padding: '25px', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-                            {editingMethodId === method.id ? (
-                                <form onSubmit={(e) => handleSaveMethod(e, method.id)} style={{ display: 'grid', gap: '15px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                                        <h3 style={{ margin: 0 }}>Edit {method.name}</h3>
-                                        <button type="button" onClick={() => setEditingMethodId(null)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={20} /></button>
-                                    </div>
-                                    <input name="name" defaultValue={method.name} placeholder="Method Name" required style={inputStyle} />
-                                    <input name="accountNumber" defaultValue={method.account_number} placeholder="Account Number" required style={inputStyle} />
-                                    <input name="accountName" defaultValue={method.account_name} placeholder="Account Name" required style={inputStyle} />
-
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                        <label style={{ fontSize: '0.9rem', fontWeight: 600 }}>QR Code Image (Optional)</label>
-                                        {method.qr_url && <img src={method.qr_url} style={{ width: '100px', height: '100px', borderRadius: '10px', objectFit: 'cover', border: '1px solid #ddd' }} />}
-                                        <input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, method.id)} style={inputStyle} />
-                                    </div>
-
-                                    <button type="submit" className="btn-primary">Save Changes</button>
-                                </form>
-                            ) : (
-                                <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
-                                        <div>
-                                            <h3 style={{ margin: 0, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                {method.name}
-                                            </h3>
-                                            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <span style={{ fontSize: '1.2rem', fontWeight: 700 }}>{method.account_number}</span>
-                                                <button onClick={() => { navigator.clipboard.writeText(method.account_number); showMessage('Number copied!'); }} style={{ border: 'none', background: '#e2e8f0', color: 'var(--primary)', borderRadius: '5px', padding: '5px', cursor: 'pointer' }} title="Copy Number">
-                                                    <Copy size={16} />
-                                                </button>
-                                            </div>
-                                            <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '5px' }}>{method.account_name}</div>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '10px' }}>
-                                            <button onClick={() => setEditingMethodId(method.id)} style={{ color: 'var(--primary)', border: 'none', background: 'none', cursor: 'pointer' }}><Edit2 size={20} /></button>
-                                            <button onClick={() => deleteMethod(method.id)} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={20} /></button>
-                                        </div>
-                                    </div>
-                                    {method.qr_url && (
-                                        <div style={{ marginTop: '15px' }}>
-                                            <img src={method.qr_url} style={{ width: '150px', height: '150px', borderRadius: '12px', objectFit: 'cover', border: '1px solid #e2e8f0' }} alt="QR Code" />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+                    {categories.map((cat, idx) => (
+                        <div key={cat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                            <div>
+                                <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{cat.name}</span>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Sort order: #{idx + 1}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                <button onClick={() => setEditingCat(cat)} style={{ border: 'none', background: '#e2e8f0', padding: '6px 10px', borderRadius: '8px', cursor: 'pointer' }}><Edit2 size={15} color="#0f172a" /></button>
+                                <button onClick={() => deleteCat(cat.id)} style={{ border: 'none', background: '#fee2e2', padding: '6px 10px', borderRadius: '8px', cursor: 'pointer' }}><Trash2 size={15} color="#ef4444" /></button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -818,222 +754,45 @@ const AdminDashboard = () => {
         );
     };
 
-    // --- COMPONENT: ORDERS LIST ---
     const OrderHistory = () => {
-        const stats = orders.reduce((acc, order) => {
-            acc.totalOrders++;
-            if (order.status !== 'Cancelled') {
-                acc.totalSales += Number(order.total_amount || 0);
-            }
-            if (order.status === 'Pending' || !order.status) acc.pendingOrders++;
-            return acc;
-        }, { totalOrders: 0, totalSales: 0, pendingOrders: 0 });
-
-        const updateOrderStatus = async (orderId, newStatus) => {
-            const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
-            if (error) { console.error(error); showMessage(`Error updating status: ${error.message}`); return; }
-            setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-            showMessage('Order status updated!');
-        };
-
-        const deleteOrder = async (orderId) => {
-            if (window.confirm('Are you sure you want to delete this order?')) {
-                const { error } = await supabase.from('orders').delete().eq('id', orderId);
-                if (error) { console.error(error); showMessage(`Error deleting: ${error.message}`); return; }
-                setOrders(orders.filter(o => o.id !== orderId));
-                showMessage('Order deleted.');
-            }
-        };
-
-        const printReceipt = (order) => {
-            const printWindow = window.open('', '_blank', 'width=400,height=600');
-            printWindow.document.write(`
-                <html>
-                    <head>
-                        <title>Receipt - ${order.id}</title>
-                        <style>
-                            body { font-family: 'Courier New', Courier, monospace; padding: 10px; width: 57mm; margin: 0; font-size: 11px; line-height: 1.2; color: #000; }
-                            .center { text-align: center; }
-                            .logo { max-width: 30mm; max-height: 30mm; margin: 0 auto 5px; display: block; object-fit: contain; }
-                            .divider { border-bottom: 1px dashed #000; margin: 8px 0; }
-                            .item { display: flex; justify-content: space-between; margin-bottom: 3px; }
-                            .total { font-weight: bold; font-size: 13px; margin-top: 5px; }
-                            @media print { 
-                                body { width: 57mm; padding: 0; }
-                                @page { margin: 0; }
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="center">
-                            ${storeSettings.logo_url ? `<img src="${storeSettings.logo_url}" class="logo">` : ''}
-                            <div style="font-weight:bold; font-size: 14px; text-transform: uppercase;">${storeSettings.store_name}</div>
-                            <div style="margin-top: 2px;">${storeSettings.address}</div>
-                            <div>Tel: ${storeSettings.contact}</div>
-                        </div>
-                        <div class="divider"></div>
-                        <div>
-                            <strong>OR#:</strong> ${order.id.toString().slice(-6).toUpperCase()}<br>
-                            <strong>Date:</strong> ${new Date(order.timestamp).toLocaleString()}<br>
-                            <strong>Type:</strong> ${(order.order_type || 'N/A').toUpperCase()}<br>
-                            <strong>Cust:</strong> ${order.customer_details?.name}
-                        </div>
-                        <div class="divider"></div>
-                        <div style="font-weight:bold; margin-bottom: 5px;">ITEMS:</div>
-                        ${(order.items || []).map(item => `<div class="item"><span>• ${item}</span></div>`).join('')}
-                        <div class="divider"></div>
-                        <div class="item total">
-                            <span>TOTAL</span>
-                            <span>₱${order.total_amount}</span>
-                        </div>
-                        <div class="divider"></div>
-                        <div class="center" style="margin-top: 10px; font-style: italic;">
-                            *** THANK YOU! ***<br>
-                            Please come again.
-                        </div>
-                        <script>
-                            window.onload = () => {
-                                window.print();
-                                setTimeout(() => window.close(), 500);
-                            };
-                        </script>
-                    </body>
-                </html>
-            `);
-            printWindow.document.close();
-            showMessage('Receipt generated! Check your print window.');
-        };
-
-        const copyToClipboard = async (text, successMsg = 'Copied to clipboard!') => {
-            try {
-                await navigator.clipboard.writeText(text);
-                showMessage(successMsg);
-            } catch (err) {
-                console.error('Failed to copy:', err);
-                showMessage('Failed to copy. Please try again.');
-            }
-        };
-
-        const copyCustomerDetails = (order) => {
-            let details = `Customer: ${order.customer_details?.name || 'N/A'}\n`;
-            if (order.customer_details?.phone) details += `Phone: ${order.customer_details.phone}\n`;
-            if (order.customer_details?.address) details += `Address: ${order.customer_details.address}\n`;
-            if (order.customer_details?.landmark) details += `Landmark: ${order.customer_details.landmark}\n`;
-            if (order.customer_details?.pickup_time) details += `Pickup Time: ${order.customer_details.pickup_time}\n`;
-            copyToClipboard(details, 'Customer details copied!');
-        };
-
-        const copyOrderItems = (order) => {
-            let itemsText = 'Order Items:\n';
-            itemsText += (order.items || []).map((item, i) => `${i + 1}. ${item}`).join('\n');
-            copyToClipboard(itemsText, 'Items list copied!');
-        };
-
-        const copyFullOrder = (order) => {
-            let fullText = `ORDER SUMMARY\n`;
-            fullText += `${'='.repeat(40)}\n\n`;
-            fullText += `Order Type: ${(order.order_type || 'N/A').toUpperCase()}\n`;
-            fullText += `Payment: ${order.payment_method || 'N/A'}\n`;
-            fullText += `Date: ${new Date(order.timestamp).toLocaleString()}\n`;
-            fullText += `Status: ${order.status || 'Pending'}\n\n`;
-
-            fullText += `CUSTOMER DETAILS:\n`;
-            fullText += `Name: ${order.customer_details?.name || 'N/A'}\n`;
-            if (order.customer_details?.phone) fullText += `Phone: ${order.customer_details.phone}\n`;
-            if (order.customer_details?.address) fullText += `Address: ${order.customer_details.address}\n`;
-            if (order.customer_details?.landmark) fullText += `Landmark: ${order.customer_details.landmark}\n`;
-            if (order.customer_details?.pickup_time) fullText += `Pickup Time: ${order.customer_details.pickup_time}\n`;
-
-            fullText += `\nORDER ITEMS:\n`;
-            fullText += (order.items || []).map((item, i) => `${i + 1}. ${item}`).join('\n');
-
-            fullText += `\n\n${'='.repeat(40)}\n`;
-            fullText += `TOTAL AMOUNT: ${order.total_amount}\n`;
-            fullText += `${'='.repeat(40)}`;
-
-            copyToClipboard(fullText, 'Full order copied!');
+        const updateOrderStatus = async (orderId, status) => {
+            const { error } = await supabase.from('orders').update({ status }).eq('id', orderId);
+            if (error) { showMessage(`Error: ${error.message}`); return; }
+            setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
+            showMessage(`Order status changed to "${status}"`);
         };
 
         return (
-            <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                    <h2 style={{ margin: 0 }}>Orders Management</h2>
-                </div>
-
-                {/* Stats Summary */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '40px' }}>
-                    <div style={{ background: '#eff6ff', padding: '20px', borderRadius: '15px', border: '1px solid #dbeafe' }}>
-                        <div style={{ color: '#1e40af', fontSize: '0.9rem', fontWeight: 600 }}>Total Orders</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 800, color: '#1e3a8a' }}>{stats.totalOrders}</div>
-                    </div>
-                    <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '15px', border: '1px solid #dcfce7' }}>
-                        <div style={{ color: '#166534', fontSize: '0.9rem', fontWeight: 600 }}>Total Sales</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 800, color: '#14532d' }}>₱{stats.totalSales}</div>
-                    </div>
-                    <div style={{ background: '#fff7ed', padding: '20px', borderRadius: '15px', border: '1px solid #ffedd5' }}>
-                        <div style={{ color: '#9a3412', fontSize: '0.9rem', fontWeight: 600 }}>Pending Orders</div>
-                        <div style={{ fontSize: '2rem', fontWeight: 800, color: '#7c2d12' }}>{stats.pendingOrders}</div>
-                    </div>
-                </div>
-
-                {orders.length === 0 ? <p className="text-muted">No orders recorded yet.</p> : (
-                    <div style={{ display: 'grid', gap: '20px' }}>
-                        {orders.slice().reverse().map((order, idx) => (
-                            <div key={order.id || idx} style={{ padding: '20px', border: '1px solid #e2e8f0', borderRadius: '15px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                <h2 style={{ margin: '0 0 24px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>🛒 Customer Orders History</h2>
+                {orders.length === 0 ? (
+                    <p style={{ color: '#64748b', textAlign: 'center', padding: '40px' }}>No orders placed yet.</p>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {orders.map(order => (
+                            <div key={order.id} style={{ border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', background: '#f8fafc' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
                                     <div>
-                                        <span style={{ fontWeight: 800, color: 'var(--primary)', marginRight: '10px' }}>{(order.order_type || 'N/A').toUpperCase()}</span>
-                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{new Date(order.timestamp).toLocaleString()}</span>
+                                        <span style={{ fontWeight: 900, fontSize: '1.1rem', color: 'var(--primary)' }}>Order #{order.order_number || order.id.slice(0, 8)}</span>
+                                        <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '12px' }}>{new Date(order.timestamp).toLocaleString()}</span>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                            <select
-                                                id={`status-${order.id}`}
-                                                defaultValue={order.status || 'Pending'}
-                                                style={{
-                                                    padding: '6px 12px',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid #cbd5e1',
-                                                    fontSize: '0.85rem',
-                                                    outline: 'none',
-                                                    background: order.status === 'Completed' ? '#dcfce7' : order.status === 'Cancelled' ? '#fee2e2' : '#f8fafc',
-                                                    color: order.status === 'Completed' ? '#166534' : order.status === 'Cancelled' ? '#991b1b' : 'inherit',
-                                                    fontWeight: 600
-                                                }}
-                                            >
-                                                <option value="Pending">Pending</option>
-                                                <option value="Preparing">Preparing</option>
-                                                <option value="Ready">Ready</option>
-                                                <option value="Completed">Completed</option>
-                                                <option value="Cancelled">Cancelled</option>
-                                            </select>
-                                            <button
-                                                onClick={() => updateOrderStatus(order.id, document.getElementById(`status-${order.id}`).value)}
-                                                className="btn-primary"
-                                                style={{ padding: '6px 15px', fontSize: '0.8rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '5px' }}
-                                            >
-                                                <Save size={14} /> Save
-                                            </button>
-                                        </div>
-                                        <button onClick={() => copyCustomerDetails(order)} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer' }} title="Copy Customer Details"><Copy size={18} /></button>
-                                        <button onClick={() => copyOrderItems(order)} style={{ color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer' }} title="Copy Items List"><Copy size={18} /></button>
-                                        <button onClick={() => copyFullOrder(order)} style={{ color: '#059669', background: 'none', border: 'none', cursor: 'pointer' }} title="Copy Full Order"><Copy size={18} /></button>
-                                        <button onClick={() => printReceipt(order)} style={{ color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }} title="Print Receipt"><Printer size={18} /></button>
-                                        <button onClick={() => deleteOrder(order.id)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} title="Delete Order"><Trash2 size={18} /></button>
-                                    </div>
+                                    <select
+                                        value={order.status || 'Pending'}
+                                        onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                                        style={{ padding: '6px 12px', borderRadius: '10px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', border: '1px solid #cbd5e1' }}
+                                    >
+                                        <option value="Pending">🟡 Pending</option>
+                                        <option value="Preparing">🟠 Preparing</option>
+                                        <option value="Ready">🟢 Ready</option>
+                                        <option value="Completed">✅ Completed</option>
+                                        <option value="Cancelled">❌ Cancelled</option>
+                                    </select>
                                 </div>
-                                <div style={{ marginBottom: '10px', fontSize: '0.95rem' }}>
-                                    <strong>{order.customer_details?.name}</strong> • {order.payment_method}
-                                    {order.customer_details?.phone && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{order.customer_details.phone}</div>}
-                                    {order.customer_details?.address && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Address: {order.customer_details.address}</div>}
+                                <div style={{ fontSize: '0.88rem', color: '#334155', marginBottom: '10px' }}>
+                                    <strong>Customer:</strong> {order.customer_details?.name || 'Guest'} ({order.customer_details?.phone || 'N/A'}) • <strong>Type:</strong> {order.order_type} • <strong>Payment:</strong> {order.payment_method}
                                 </div>
-                                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', fontSize: '0.9rem' }}>
-                                    {order.items.map((item, i) => (
-                                        <div key={i} style={{ marginBottom: '4px' }}>• {item}</div>
-                                    ))}
-                                </div>
-                                <div style={{ marginTop: '15px', textAlign: 'right', fontWeight: 800, fontSize: '1.1rem' }}>
-                                    Total Amount: ₱{order.total_amount}
+                                <div style={{ fontWeight: 800, color: 'var(--primary-dark)', fontSize: '1rem' }}>
+                                    Total: ₱{order.total_amount}
                                 </div>
                             </div>
                         ))}
@@ -1043,283 +802,171 @@ const AdminDashboard = () => {
         );
     };
 
-    // --- COMPONENT: STORE GENERAL SETTINGS ---
+    const OrderTypeManager = () => (
+        <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+            <h2 style={{ margin: '0 0 20px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d' }}>🚚 Order Types</h2>
+            <div style={{ display: 'flex', gap: '15px' }}>
+                {orderTypes.map(t => (
+                    <div key={t.id} style={{ padding: '16px 24px', background: '#f0fdf4', borderRadius: '14px', border: '1px solid #bbf7d0', fontWeight: 800, color: '#166534' }}>
+                        ✓ {t.name} (Active)
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+
+    const PaymentSettings = () => (
+        <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+            <h2 style={{ margin: '0 0 20px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d' }}>💳 Payment Methods</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+                {paymentSettings.map(p => (
+                    <div key={p.id} style={{ padding: '20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                        <h4 style={{ margin: '0 0 6px', color: '#0c250d' }}>{p.name}</h4>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Account: {p.account_number || p.accountNumber || 'N/A'}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+
     const StoreGeneralSettings = () => {
         const handleSave = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            const updateData = {
+            const settingsObj = {
                 store_name: formData.get('storeName'),
                 address: formData.get('address'),
                 contact: formData.get('contact'),
+                manual_status: formData.get('manualStatus'),
                 open_time: formData.get('openTime'),
                 close_time: formData.get('closeTime'),
-                manual_status: formData.get('manualStatus')
+                logo_url: storeSettings.logo_url,
+                banner_images: storeSettings.banner_images
             };
 
-            const payload = storeSettings.id ? { id: storeSettings.id, ...updateData } : updateData;
-            const { data, error } = await supabase.from('store_settings').upsert(payload).select().single();
-            if (error) {
-                console.error(error);
-                showMessage(`Error saving: ${error.message}`);
-                return;
-            }
-            setStoreSettings(data);
-            showMessage('General settings saved!');
-        };
-
-        const handleBannerUpload = async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onloadend = async () => {
-                    const newBanners = [...(storeSettings.banner_images || []), reader.result];
-                    let error;
-                    if (storeSettings.id) {
-                        const res = await supabase.from('store_settings').update({ banner_images: newBanners }).eq('id', storeSettings.id);
-                        error = res.error;
-                    } else {
-                        const res = await supabase.from('store_settings').upsert({ banner_images: newBanners }).select().single();
-                        error = res.error;
-                        if (res.data) setStoreSettings(res.data);
-                    }
-                    if (error) {
-                        console.error(error);
-                        showMessage(`Error saving banner: ${error.message}`);
-                        return;
-                    }
-                    if (storeSettings.id) setStoreSettings({ ...storeSettings, banner_images: newBanners });
-                    showMessage('Banner uploaded!');
-                };
-                reader.readAsDataURL(file);
-            }
-        };
-
-        const removeBanner = async (index) => {
-            const newBanners = (storeSettings.banner_images || []).filter((_, i) => i !== index);
-            if (!storeSettings.id) {
-                setStoreSettings({ ...storeSettings, banner_images: newBanners });
-                return;
-            }
-            const { error } = await supabase.from('store_settings').update({ banner_images: newBanners }).eq('id', storeSettings.id);
-            if (error) {
-                console.error(error);
-                showMessage(`Error removing: ${error.message}`);
-                return;
-            }
-            setStoreSettings({ ...storeSettings, banner_images: newBanners });
-            showMessage('Banner removed.');
-        };
-
-        const handleLogoUpload = async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onloadend = async () => {
-                    const logo_url = reader.result;
-                    let error;
-                    if (storeSettings.id) {
-                        const res = await supabase.from('store_settings').update({ logo_url }).eq('id', storeSettings.id);
-                        error = res.error;
-                    } else {
-                        const res = await supabase.from('store_settings').upsert({ logo_url }).select().single();
-                        error = res.error;
-                        if (res.data) setStoreSettings(res.data);
-                    }
-                    if (error) {
-                        console.error(error);
-                        showMessage(`Error saving logo: ${error.message}`);
-                        return;
-                    }
-                    if (storeSettings.id) setStoreSettings({ ...storeSettings, logo_url });
-                    showMessage('Logo updated!');
-                };
-                reader.readAsDataURL(file);
-            }
-        };
-
-        const removeLogo = async () => {
-            if (!storeSettings.id) {
-                setStoreSettings({ ...storeSettings, logo_url: '' });
-                return;
-            }
-            const { error } = await supabase.from('store_settings').update({ logo_url: '' }).eq('id', storeSettings.id);
-            if (error) {
-                console.error(error);
-                showMessage(`Error removing logo: ${error.message}`);
-                return;
-            }
-            setStoreSettings({ ...storeSettings, logo_url: '' });
-            showMessage('Logo removed.');
+            const { error } = await supabase.from('store_settings').upsert([settingsObj]);
+            if (error) { showMessage(`Error: ${error.message}`); return; }
+            setStoreSettings(settingsObj);
+            showMessage('🎉 Store general settings saved successfully!');
         };
 
         return (
-            <div className="admin-card" style={{ background: 'white', padding: '30px', borderRadius: '24px' }}>
-                <h2 style={{ marginBottom: '30px' }}>Store Settings</h2>
-
+            <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                <h2 style={{ margin: '0 0 24px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d' }}>⚙️ General Store Settings</h2>
                 <form onSubmit={handleSave}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '30px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                         <div>
-                            <h3 style={{ fontSize: '1.1rem', marginBottom: '20px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <Clock size={20} /> Store Availability
-                            </h3>
-                            <div style={{ display: 'grid', gap: '15px' }}>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 600 }}>Manual Status Toggle</label>
-                                    <select name="manualStatus" defaultValue={storeSettings.manual_status} style={inputStyle}>
-                                        <option value="auto">Auto (Based on Hours)</option>
-                                        <option value="open">Always Open</option>
-                                        <option value="closed">Always Closed</option>
-                                    </select>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 600 }}>Opening Time</label>
-                                        <input name="openTime" type="time" defaultValue={storeSettings.open_time} style={inputStyle} />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 600 }}>Closing Time</label>
-                                        <input name="closeTime" type="time" defaultValue={storeSettings.close_time} style={inputStyle} />
-                                    </div>
-                                </div>
-                            </div>
+                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Store Name</label>
+                            <input name="storeName" defaultValue={storeSettings.store_name} style={inputStyle} />
                         </div>
-
                         <div>
-                            <h3 style={{ fontSize: '1.1rem', marginBottom: '20px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <FileText size={20} /> Store Information
-                            </h3>
-                            <div style={{ display: 'grid', gap: '15px' }}>
-                                <div><label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 600 }}>Store Name</label><input name="storeName" defaultValue={storeSettings.store_name} style={inputStyle} /></div>
-                                <div><label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 600 }}>Address</label><input name="address" defaultValue={storeSettings.address} style={inputStyle} /></div>
-                                <div><label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px', fontWeight: 600 }}>Contact Number</label><input name="contact" defaultValue={storeSettings.contact} style={inputStyle} /></div>
-                            </div>
+                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Address</label>
+                            <input name="address" defaultValue={storeSettings.address} style={inputStyle} />
                         </div>
-
                         <div>
-                            <h3 style={{ fontSize: '1.1rem', marginBottom: '20px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <Camera size={20} /> Store Logo
-                            </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                                {storeSettings.logo_url && (
-                                    <div style={{ position: 'relative', width: '120px' }}>
-                                        <img src={storeSettings.logo_url} style={{ width: '120px', height: '120px', objectFit: 'contain', border: '1px solid #ddd', borderRadius: '10px' }} />
-                                        <button
-                                            type="button"
-                                            onClick={removeLogo}
-                                            style={{
-                                                position: 'absolute',
-                                                top: '-10px',
-                                                right: '-10px',
-                                                background: 'rgba(239, 68, 68, 0.9)',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '50%',
-                                                width: '28px',
-                                                height: '28px',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                                            }}
-                                        >
-                                            <X size={16} />
-                                        </button>
-                                    </div>
-                                )}
-                                <input type="file" accept="image/*" onChange={handleLogoUpload} style={inputStyle} />
-                            </div>
+                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Contact Hotline</label>
+                            <input name="contact" defaultValue={storeSettings.contact} style={inputStyle} />
                         </div>
-
-                        <div style={{ gridColumn: '1 / -1' }}>
-                            <h3 style={{ fontSize: '1.1rem', marginBottom: '20px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <ImageIcon size={20} /> Hero Slideshow Banners
-                            </h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-                                {(storeSettings.banner_images || []).map((url, i) => (
-                                    <div key={i} style={{ position: 'relative', overflow: 'hidden', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: 'var(--shadow)' }}>
-                                        <img src={url} style={{ width: '100%', height: '140px', objectFit: 'cover' }} alt={`Banner ${i}`} />
-                                        <button
-                                            type="button"
-                                            onClick={() => removeBanner(i)}
-                                            style={{
-                                                position: 'absolute',
-                                                top: '10px',
-                                                right: '10px',
-                                                background: 'rgba(239, 68, 68, 0.9)',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '50%',
-                                                width: '32px',
-                                                height: '32px',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                                                transition: 'all 0.2s'
-                                            }}
-                                            onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
-                                            onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                                        >
-                                            <X size={18} />
-                                        </button>
-                                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', color: 'white', padding: '5px 10px', fontSize: '0.7rem', textAlign: 'center' }}>
-                                            Banner {i + 1}
-                                        </div>
-                                    </div>
-                                ))}
-                                <label style={{
-                                    height: '140px',
-                                    border: '3px dashed var(--primary)',
-                                    borderRadius: '16px',
-                                    background: '#fff5f5',
-                                    color: 'var(--primary)',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '10px',
-                                    transition: 'all 0.3s',
-                                    fontWeight: 700
-                                }}
-                                    onMouseOver={(e) => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.borderColor = 'var(--primary-dark)'; }}
-                                    onMouseOut={(e) => { e.currentTarget.style.background = '#fff5f5'; e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                                >
-                                    <Plus size={32} />
-                                    <span style={{ fontSize: '0.9rem' }}>Add New Banner</span>
-                                    <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ display: 'none' }} />
-                                </label>
-                            </div>
+                        <div>
+                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Opening Time</label>
+                            <input name="openTime" type="time" defaultValue={storeSettings.open_time} style={inputStyle} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Closing Time</label>
+                            <input name="closeTime" type="time" defaultValue={storeSettings.close_time} style={inputStyle} />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: '6px' }}>Manual Status</label>
+                            <select name="manualStatus" defaultValue={storeSettings.manual_status} style={inputStyle}>
+                                <option value="auto">Auto (Hours Schedule)</option>
+                                <option value="open">Always Open</option>
+                                <option value="closed">Always Closed</option>
+                            </select>
                         </div>
                     </div>
-                    <button type="submit" className="btn-primary" style={{ marginTop: '40px', width: '100%', padding: '15px' }}>Save All Settings</button>
+                    <button type="submit" style={{ marginTop: '24px', padding: '12px 28px', borderRadius: '12px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+                        Save Settings
+                    </button>
                 </form>
             </div>
         );
     };
 
-
-    // --- MAIN RENDER ---
+    // ─────────────────────────────────────────────────────────────
+    // MAIN LAYOUT RENDER (LUXURY DARK GREEN & GOLD BRAND THEME)
+    // ─────────────────────────────────────────────────────────────
     return (
-        <div className="admin-layout" style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9', fontFamily: 'Inter' }}>
-            {/* Sidebar */}
-            <aside style={{ width: '260px', background: 'var(--primary)', color: 'white', padding: '30px 20px', position: 'fixed', height: '100vh', boxShadow: '5px 0 15px rgba(0,0,0,0.1)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '50px', paddingLeft: '10px' }}>
-                    <Package size={28} color="var(--secondary)" />
-                    <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'white' }}>Chilled & Frozen Hub</span>
-                </div>
+        <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc', fontFamily: 'Outfit, sans-serif' }}>
+            {/* Sidebar Navigation */}
+            <aside style={{
+                width: '260px',
+                background: 'linear-gradient(180deg, #091f0a 0%, #0d2b0e 100%)',
+                color: 'white',
+                padding: '28px 18px',
+                position: 'fixed',
+                height: '100vh',
+                boxShadow: '4px 0 20px rgba(0,0,0,0.15)',
+                zIndex: 100,
+                display: 'flex',
+                flexDirection: 'column',
+                justify: 'space-between'
+            }}>
+                <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '36px', paddingLeft: '6px' }}>
+                        <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" style={{ height: '42px', width: '42px', borderRadius: '50%', border: '2px solid #F9B700', background: 'white', objectFit: 'cover' }} />
+                        <div>
+                            <div style={{ fontSize: '1.02rem', fontWeight: 900, color: '#F9B700', lineHeight: 1.1 }}>Chilled & Frozen</div>
+                            <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Admin Portal</span>
+                        </div>
+                    </div>
 
-                <nav style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <SidebarItem icon={<List size={20} />} label="Inventory & Products" active={activeTab === 'menu'} onClick={() => setActiveTab('menu')} />
-                    <SidebarItem icon={<Tag size={20} />} label="Categories" active={activeTab === 'categories'} onClick={() => setActiveTab('categories')} />
-                    <SidebarItem icon={<ShoppingBag size={20} />} label="Orders" active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} />
-                    <SidebarItem icon={<Settings size={20} />} label="Order Types" active={activeTab === 'orderTypes'} onClick={() => setActiveTab('orderTypes')} />
-                    <SidebarItem icon={<CreditCard size={20} />} label="Payment Methods" active={activeTab === 'payment'} onClick={() => setActiveTab('payment')} />
-                    <SidebarItem icon={<LayoutDashboard size={20} />} label="General Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
-                </nav>
+                    <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <SidebarItem
+                            icon={<Package size={18} />}
+                            label="Inventory & Stocks"
+                            active={activeTab === 'inventory'}
+                            onClick={() => setActiveTab('inventory')}
+                            badge={items.filter(i => i.out_of_stock || (i.stock !== undefined && i.stock <= (i.low_stock_threshold || 5))).length}
+                        />
+                        <SidebarItem
+                            icon={<Utensils size={18} />}
+                            label="Menu Catalog"
+                            active={activeTab === 'menu'}
+                            onClick={() => setActiveTab('menu')}
+                        />
+                        <SidebarItem
+                            icon={<Tag size={18} />}
+                            label="Categories"
+                            active={activeTab === 'categories'}
+                            onClick={() => setActiveTab('categories')}
+                        />
+                        <SidebarItem
+                            icon={<ShoppingBag size={18} />}
+                            label="Orders History"
+                            active={activeTab === 'orders'}
+                            onClick={() => setActiveTab('orders')}
+                            badge={orders.filter(o => o.status === 'Pending').length}
+                        />
+                        <SidebarItem
+                            icon={<Truck size={18} />}
+                            label="Order Types"
+                            active={activeTab === 'orderTypes'}
+                            onClick={() => setActiveTab('orderTypes')}
+                        />
+                        <SidebarItem
+                            icon={<CreditCard size={18} />}
+                            label="Payment Methods"
+                            active={activeTab === 'payment'}
+                            onClick={() => setActiveTab('payment')}
+                        />
+                        <SidebarItem
+                            icon={<Settings size={18} />}
+                            label="General Settings"
+                            active={activeTab === 'settings'}
+                            onClick={() => setActiveTab('settings')}
+                        />
+                    </nav>
+                </div>
 
                 <button
                     onClick={handleLogout}
@@ -1327,54 +974,84 @@ const AdminDashboard = () => {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '10px',
-                        background: 'rgba(255, 255, 255, 0.1)',
-                        border: 'none',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
                         color: 'white',
-                        padding: '12px',
-                        borderRadius: '10px',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
                         cursor: 'pointer',
-                        position: 'absolute',
-                        bottom: '30px',
-                        left: '20px',
-                        width: 'calc(100% - 40px)'
+                        fontWeight: 700,
+                        fontSize: '0.9rem',
+                        transition: 'all 0.2s'
                     }}
                 >
-                    <LogOut size={20} /> Sign Out
+                    <LogOut size={18} /> Sign Out Admin
                 </button>
             </aside>
 
-            {/* Main Content */}
-            <main style={{ marginLeft: '260px', flex: 1, padding: '40px', maxWidth: '1200px' }}>
+            {/* Main Workspace Area */}
+            <main style={{ marginLeft: '260px', flex: 1, padding: '32px 40px', maxWidth: '1280px' }}>
+                {/* Notification Banner */}
                 {message && (
                     <div style={{
                         position: 'fixed',
                         top: '20px',
-                        left: '50%',
+                        left: '58%',
                         transform: 'translateX(-50%)',
-                        background: message.toLowerCase().includes('error') ? '#ef4444' : '#10b981',
+                        background: message.toLowerCase().includes('error') ? '#ef4444' : '#059669',
                         color: 'white',
                         padding: '12px 24px',
-                        borderRadius: '12px',
+                        borderRadius: '14px',
                         zIndex: 5000,
-                        fontWeight: 700,
-                        boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+                        fontWeight: 800,
+                        boxShadow: '0 12px 30px rgba(0,0,0,0.2)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '10px',
-                        animation: 'slideDown 0.3s ease-out forwards'
+                        gap: '10px'
                     }}>
-                        {message.toLowerCase().includes('error') ? <X size={18} /> : <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: '50%', padding: '2px' }}><Plus size={16} style={{ transform: 'rotate(45deg)' }} /></div>}
                         {message}
-                        <style>{`
-                            @keyframes slideDown {
-                                0% { transform: translate(-50%, -100%); opacity: 0; }
-                                80% { transform: translate(-50%, 10px); }
-                                100% { transform: translate(-50%, 0); opacity: 1; }
-                            }
-                        `}</style>
                     </div>
                 )}
 
+                {/* Top Header Bar */}
+                <header style={{
+                    display: 'flex',
+                    justify: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '28px',
+                    background: 'white',
+                    padding: '16px 28px',
+                    borderRadius: '18px',
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.02)'
+                }}>
+                    <div>
+                        <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                            {activeTab === 'inventory' && '📦 Stock & Inventory Control Center'}
+                            {activeTab === 'menu' && '🍽️ Menu & Product Catalog Editor'}
+                            {activeTab === 'categories' && '🏷️ Store Categories'}
+                            {activeTab === 'orders' && '🛒 Customer Orders Manager'}
+                            {activeTab === 'orderTypes' && '🚚 Order & Fulfillment Methods'}
+                            {activeTab === 'payment' && '💳 Payment Methods'}
+                            {activeTab === 'settings' && '⚙️ Store General Settings'}
+                        </h1>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <span style={{
+                            padding: '6px 14px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 800,
+                            background: '#dcfce7', color: '#166534'
+                        }}>
+                            🟢 Store Active
+                        </span>
+                        <a href="/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#0c250d', color: '#F9B700', textDecoration: 'none', padding: '8px 16px', borderRadius: '12px', fontSize: '0.82rem', fontWeight: 800 }}>
+                            <span>View Live Store</span> <ExternalLink size={14} />
+                        </a>
+                    </div>
+                </header>
+
+                {/* Tab Views */}
+                {activeTab === 'inventory' && <InventoryManager />}
                 {activeTab === 'menu' && <MenuManager />}
                 {activeTab === 'categories' && <CategoryManager />}
                 {activeTab === 'orders' && <OrderHistory />}
@@ -1386,25 +1063,35 @@ const AdminDashboard = () => {
     );
 };
 
-const SidebarItem = ({ icon, label, active, onClick }) => (
+const SidebarItem = ({ icon, label, active, onClick, badge }) => (
     <button onClick={onClick} style={{
-        display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 15px',
-        background: active ? 'var(--accent)' : 'transparent',
-        color: active ? 'var(--primary)' : 'rgba(255,255,255,0.7)',
-        border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600,
-        textAlign: 'left', width: '100%', transition: 'all 0.2s'
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px',
+        background: active ? '#F9B700' : 'transparent',
+        color: active ? '#081708' : 'rgba(255,255,255,0.85)',
+        border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: active ? 800 : 600,
+        textAlign: 'left', width: '100%', transition: 'all 0.2s ease',
+        boxShadow: active ? '0 4px 15px rgba(249,183,0,0.35)' : 'none'
     }}>
-        {icon} {label}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {icon} <span>{label}</span>
+        </div>
+        {badge > 0 && (
+            <span style={{
+                background: active ? '#081708' : '#ef4444',
+                color: active ? '#F9B700' : 'white',
+                padding: '2px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 800
+            }}>
+                {badge}
+            </span>
+        )}
     </button>
 );
 
-const SectionLabel = ({ title, onAdd }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', marginBottom: '10px', paddingBottom: '5px', borderBottom: '1px solid #eee' }}>
-        <label style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{title}</label>
-        <button type="button" onClick={onAdd} style={{ color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>+ Add</button>
-    </div>
-);
+const quickBtnStyle = {
+    padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white',
+    color: '#0f172a', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer'
+};
 
-const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.95rem' };
+const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.92rem' };
 
 export default AdminDashboard;
