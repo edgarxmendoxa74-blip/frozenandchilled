@@ -110,12 +110,12 @@ const Home = () => {
     const isOpen = isStoreOpen();
 
     // Helper to deduplicate array of objects by id or name
-    const deduplicateCategories = (arr) => {
+    const deduplicateByKey = (arr) => {
         if (!Array.isArray(arr)) return [];
         const unique = [];
         const seen = new Set();
         for (const item of arr) {
-            const key = (item.id || item.name || '').toLowerCase().trim();
+            const key = (item.name || item.id || '').toLowerCase().trim();
             if (!seen.has(key)) {
                 seen.add(key);
                 unique.push(item);
@@ -132,17 +132,17 @@ const Home = () => {
                 // 1. Fetch Categories
                 const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
                 if (catData && catData.length > 0) {
-                    const unique = deduplicateCategories(catData);
+                    const unique = deduplicateByKey(catData);
                     setCategories(unique);
                     if (unique.length > 0) setActiveCategory(unique[0].id);
                 } else {
                     const savedCats = localStorage.getItem('categories');
                     if (savedCats) {
-                        const parsed = deduplicateCategories(JSON.parse(savedCats));
+                        const parsed = deduplicateByKey(JSON.parse(savedCats));
                         setCategories(parsed);
                         if (parsed.length > 0) setActiveCategory(parsed[0].id);
                     } else {
-                        const defaultUnique = deduplicateCategories(initialCategories);
+                        const defaultUnique = deduplicateByKey(initialCategories);
                         setCategories(defaultUnique);
                         if (defaultUnique.length > 0) setActiveCategory(defaultUnique[0].id);
                     }
@@ -157,15 +157,15 @@ const Home = () => {
                     setItems(savedItems ? JSON.parse(savedItems) : menuItems);
                 }
 
-                // 3. Fetch Payment Settings
+                // 3. Fetch Payment Settings (deduplicated)
                 const { data: payData } = await supabase.from('payment_settings').select('*').eq('is_active', true);
                 if (payData && payData.length > 0) {
-                    setPaymentSettings(payData);
+                    setPaymentSettings(deduplicateByKey(payData));
                 } else {
                     const savedPayments = localStorage.getItem('paymentSettings');
                     if (savedPayments) {
                         const parsed = JSON.parse(savedPayments);
-                        setPaymentSettings(Array.isArray(parsed) ? parsed.filter(p => p.is_active !== false) : []);
+                        setPaymentSettings(deduplicateByKey(Array.isArray(parsed) ? parsed.filter(p => p.is_active !== false) : []));
                     }
                 }
 
@@ -183,11 +183,11 @@ const Home = () => {
                 // 4. Fetch Order Types
                 const { data: typeData } = await supabase.from('order_types').select('*').eq('is_active', true);
                 if (typeData && typeData.length > 0) {
-                    setOrderTypes(typeData);
+                    setOrderTypes(deduplicateByKey(typeData));
                 } else {
                     const savedOrderTypes = localStorage.getItem('orderTypes');
                     if (savedOrderTypes) {
-                        const parsed = JSON.parse(savedOrderTypes);
+                        const parsed = deduplicateByKey(JSON.parse(savedOrderTypes));
                         if (parsed.length > 0) setOrderTypes(parsed);
                     }
                 }
@@ -307,6 +307,10 @@ const Home = () => {
         setSelectedProduct(null);
     };
 
+    const addOneToCart = (cartItemId) => {
+        setCart(cart.map(i => i.cartItemId === cartItemId ? { ...i, quantity: i.quantity + 1 } : i));
+    };
+
     const removeFromCart = (cartItemId) => {
         setCart(cart.map(i => i.cartItemId === cartItemId ? { ...i, quantity: i.quantity > 1 ? i.quantity - 1 : i.quantity } : i));
     };
@@ -346,7 +350,8 @@ const Home = () => {
         }
         totalBreakdown += `\nTOTAL AMOUNT: ₱${cartTotal}`;
 
-        const orderDetailsText = `ORDER SUMMARY\n${'='.repeat(40)}\n\nOrder Type: ${orderType.toUpperCase()}\nPayment Method: ${paymentMethod}\n\nCustomer Details:\n${customerInfoStr}\n\nItem Details:\n${itemDetails.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n${'='.repeat(40)}\n${totalBreakdown}\n${'='.repeat(40)}`;
+        const selectedPaymentName = paymentSettings.find(m => m.id === paymentMethod)?.name || paymentMethod;
+        const orderDetailsText = `ORDER SUMMARY\n${'='.repeat(40)}\n\nOrder Type: ${orderType.toUpperCase()}\nPayment Method: ${selectedPaymentName}\n\nCustomer Details:\n${customerInfoStr}\n\nItem Details:\n${itemDetails.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n${'='.repeat(40)}\n${totalBreakdown}\n${'='.repeat(40)}`;
 
         const copied = await copyToClipboard(orderDetailsText);
         if (copied) {
@@ -427,7 +432,7 @@ const Home = () => {
 
         const newOrder = {
             order_type: orderType,
-            payment_method: paymentMethod,
+            payment_method: paymentSettings.find(m => m.id === paymentMethod)?.name || paymentMethod,
             customer_details: customerDetails,
             items: itemDetails,
             total_amount: cartTotal,
@@ -464,7 +469,7 @@ const Home = () => {
         const message = `Hello! I'd like to place an order:
 
 Order Type: ${orderType.toUpperCase()}
-Payment Method: ${paymentMethod}
+Payment Method: ${paymentSettings.find(m => m.id === paymentMethod)?.name || paymentMethod}
 
 Customer Details:
 ${customerInfoStr}
@@ -993,76 +998,69 @@ Thank you!`;
                             <div style={{ marginBottom: '30px' }}>
                                 <label style={{ fontWeight: 700, fontSize: '1rem', display: 'block', marginBottom: '15px' }}>Payment Method</label>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                                    <button
-                                        onClick={() => setPaymentMethod('Cash/COD')}
-                                        style={{
-                                            padding: '15px', borderRadius: '15px', border: '2px solid',
-                                            borderColor: paymentMethod === 'Cash/COD' ? 'var(--primary)' : '#e2e8f0',
-                                            background: paymentMethod === 'Cash/COD' ? '#f0f9ff' : 'white',
-                                            cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center'
-                                        }}
-                                    >
-                                        <div style={{ marginBottom: '8px', color: 'var(--primary)' }}><Banknote size={24} /></div>
-                                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)' }}>Cash / COD</div>
-                                    </button>
-                                    {paymentSettings.map(method => (
-                                        <button
-                                            key={method.id}
-                                            onClick={() => setPaymentMethod(method.id)}
-                                            style={{
-                                                padding: '15px', borderRadius: '15px', border: '2px solid',
-                                                borderColor: paymentMethod === method.id ? 'var(--primary)' : '#e2e8f0',
-                                                background: paymentMethod === method.id ? '#f0f9ff' : 'white',
-                                                cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center'
-                                            }}
-                                        >
-                                            <div style={{ marginBottom: '8px', color: 'var(--primary)' }}><CreditCard size={24} /></div>
-                                            <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)' }}>{method.name}</div>
-                                        </button>
-                                    ))}
+                                    {paymentSettings.map(method => {
+                                        const isCash = (method.name || '').toLowerCase().includes('cash') || (method.name || '').toLowerCase().includes('cod');
+                                        return (
+                                            <button
+                                                key={method.id}
+                                                onClick={() => setPaymentMethod(method.id)}
+                                                style={{
+                                                    padding: '15px', borderRadius: '15px', border: '2px solid',
+                                                    borderColor: paymentMethod === method.id ? 'var(--primary)' : '#e2e8f0',
+                                                    background: paymentMethod === method.id ? '#f0f9ff' : 'white',
+                                                    cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center'
+                                                }}
+                                            >
+                                                <div style={{ marginBottom: '8px', color: 'var(--primary)' }}>{isCash ? <Banknote size={24} /> : <CreditCard size={24} />}</div>
+                                                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)' }}>{method.name}</div>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
 
                                 {/* Payment Details Area */}
-                                {paymentMethod && paymentMethod !== 'Cash/COD' && (
-                                    <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-                                        {paymentSettings.find(m => m.id === paymentMethod) ? (
-                                            (() => {
-                                                const method = paymentSettings.find(m => m.id === paymentMethod);
-                                                return (
-                                                    <div style={{ textAlign: 'center' }}>
-                                                        <h4 style={{ color: 'var(--primary)', marginBottom: '15px' }}>Send {method.name} Payment</h4>
-                                                        {method.qr_url && (
-                                                            <div style={{ background: 'white', padding: '10px', borderRadius: '12px', display: 'inline-block', marginBottom: '20px' }}>
-                                                                <img src={method.qr_url} style={{ width: '180px', height: '180px', borderRadius: '10px', objectFit: 'contain' }} alt="QR Code" />
-                                                            </div>
-                                                        )}
-                                                        <div style={{ background: 'white', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Account Number</div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
-                                                                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>{method.account_number}</div>
-                                                                <button
-                                                                    onClick={() => { navigator.clipboard.writeText(method.account_number); alert('Copied!'); }}
-                                                                    style={{ border: 'none', background: 'var(--primary)', color: 'white', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, fontSize: '0.8rem' }}
-                                                                >
-                                                                    <Copy size={14} /> Copy
-                                                                </button>
-                                                            </div>
-                                                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)' }}>{method.account_name}</div>
-                                                        </div>
+                                {paymentMethod && (() => {
+                                    const method = paymentSettings.find(m => m.id === paymentMethod);
+                                    if (!method) return null;
+                                    const isCash = (method.name || '').toLowerCase().includes('cash') || (method.name || '').toLowerCase().includes('cod');
+                                    if (isCash) {
+                                        return (
+                                            <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '20px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
+                                                <Banknote size={32} style={{ color: '#059669', marginBottom: '10px' }} />
+                                                <h4 style={{ color: '#059669', marginBottom: '8px' }}>Cash Payment</h4>
+                                                <p style={{ color: '#065f46', fontSize: '0.9rem' }}>Please prepare exact amount. Payment will be collected upon {orderType === 'delivery' ? 'delivery' : 'pickup'}.</p>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                                            <div style={{ textAlign: 'center' }}>
+                                                <h4 style={{ color: 'var(--primary)', marginBottom: '15px' }}>Send {method.name} Payment</h4>
+                                                {method.qr_url && (
+                                                    <div style={{ background: 'white', padding: '10px', borderRadius: '12px', display: 'inline-block', marginBottom: '20px' }}>
+                                                        <img src={method.qr_url} style={{ width: '180px', height: '180px', borderRadius: '10px', objectFit: 'contain' }} alt="QR Code" />
                                                     </div>
-                                                );
-                                            })()
-                                        ) : (
-                                            <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Details not found.</p>
-                                        )}
-                                    </div>
-                                )}
+                                                )}
+                                                <div style={{ background: 'white', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Account Number</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
+                                                        <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>{method.account_number || method.accountNumber}</div>
+                                                        <button
+                                                            onClick={() => { navigator.clipboard.writeText(method.account_number || method.accountNumber || ''); alert('Copied!'); }}
+                                                            style={{ border: 'none', background: 'var(--primary)', color: 'white', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, fontSize: '0.8rem' }}
+                                                        >
+                                                            <Copy size={14} /> Copy
+                                                        </button>
+                                                    </div>
+                                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)' }}>{method.account_name || method.accountName}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
                             {/* Order Type & Form here (omitted for brevity, assume exists as before) */}
@@ -1240,7 +1238,7 @@ Thank you!`;
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                     <button onClick={() => removeFromCart(item.cartItemId)} style={{ border: '1px solid var(--border)', background: 'none', padding: '2px', borderRadius: '4px' }}><Minus size={14} /></button>
                                     <span>{item.quantity}</span>
-                                    <button onClick={() => addToCart(item, { variation: item.selectedVariation, flavors: item.selectedFlavors, addons: item.selectedAddons })} style={{ border: '1px solid var(--border)', background: 'none', padding: '2px', borderRadius: '4px' }}><Plus size={14} /></button>
+                                    <button onClick={() => addOneToCart(item.cartItemId)} style={{ border: '1px solid var(--border)', background: 'none', padding: '2px', borderRadius: '4px' }}><Plus size={14} /></button>
                                     <button onClick={() => deleteFromCart(item.cartItemId)} style={{ marginLeft: '5px', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}><Trash2 size={16} /></button>
                                 </div>
                             </div>
