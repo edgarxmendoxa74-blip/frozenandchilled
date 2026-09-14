@@ -1,4 +1,4 @@
--- Supabase Schema for 3J Dressed Chicken Store
+-- Supabase Schema for Chilled and Frozen Hub Store
 -- This script creates the tables and seeds default data (categories, menu items, settings).
 
 -- Enable UUID extension
@@ -7,10 +7,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. Store Settings Table
 CREATE TABLE IF NOT EXISTS store_settings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    store_name TEXT NOT NULL DEFAULT 'Chilled And Frozen Hub',
+    store_name TEXT NOT NULL DEFAULT 'Chilled and Frozen Hub',
     address TEXT DEFAULT 'Caltex Road, Banaba South, Batangas City',
     contact TEXT DEFAULT '09947246294 / 09949314800',
-    logo_url TEXT DEFAULT '/logo.png',
+    logo_url TEXT DEFAULT '/chilled-frozen-logo.png',
     banner_images JSONB DEFAULT '[]',
     open_time TIME DEFAULT '08:00',
     close_time TIME DEFAULT '19:00',
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS orders (
 -- Insert Store Settings
 INSERT INTO store_settings (store_name, address, contact, open_time, close_time, manual_status)
 VALUES (
-    'Chilled And Frozen Hub',
+    'Chilled and Frozen Hub',
     'Caltex Road, Banaba South, Batangas City',
     '09947246294 / 09949314800',
     '08:00',
@@ -112,10 +112,10 @@ INSERT INTO order_types (name, is_active) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Insert Payment Settings
-INSERT INTO payment_settings (name, account_number, account_name, is_active) VALUES
-('GCash', '09947246294', 'Chilled And Frozen Hub', TRUE),
-('Cash on Delivery', 'N/A', 'Cash Payment', TRUE),
-('Maya', '09947246294', 'Chilled And Frozen Hub', TRUE)
+INSERT INTO payment_settings (name, account_number, account_name, qr_url, is_active) VALUES
+('GCash', '09947246294', 'Chilled and Frozen Hub', 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=GCash%3A%2009947246294%20(Chilled%20and%20Frozen%20Hub)', TRUE),
+('Cash on Delivery', 'N/A', 'Cash Payment', NULL, TRUE),
+('PayMaya', '09947246294', 'Chilled and Frozen Hub', 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=PayMaya%3A%2009947246294%20(Chilled%20and%20Frozen%20Hub)', TRUE)
 ON CONFLICT DO NOTHING;
 
 -- Insert Categories

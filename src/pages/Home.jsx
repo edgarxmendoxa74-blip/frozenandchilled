@@ -91,10 +91,10 @@ const Home = () => {
         manual_status: 'auto',
         open_time: '08:00',
         close_time: '19:00',
-        store_name: 'Chilled And Frozen Hub',
+        store_name: 'Chilled and Frozen Hub',
         address: 'Caltex Road, Banaba South, Batangas City',
         contact: '09947246294 / 09949314800',
-        logo_url: '/logo.png',
+        logo_url: '/chilled-frozen-logo.png',
         banner_images: [
             'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&q=80',
             'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80',
@@ -125,61 +125,143 @@ const Home = () => {
         return unique;
     };
 
-    // Load data from Supabase (with LocalStorage fallback)
+    const normalizeItem = (item) => {
+        if (!item) return item;
+        return {
+            ...item,
+            category_id: item.category_id || item.categoryId || '',
+            low_stock_threshold: item.low_stock_threshold ?? item.lowStockThreshold ?? 5,
+            min_order_note: item.min_order_note || item.minOrderNote || '',
+        };
+    };
+
+    // Load data from Supabase (merged with LocalStorage for real-time local updates)
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
                 // 1. Fetch Categories
-                const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
-                if (catData && catData.length > 0) {
-                    const unique = deduplicateByKey(catData);
-                    setCategories(unique);
-                    if (unique.length > 0) setActiveCategory(unique[0].id);
-                } else {
-                    const savedCats = localStorage.getItem('categories');
-                    if (savedCats) {
-                        const parsed = deduplicateByKey(JSON.parse(savedCats));
-                        setCategories(parsed);
-                        if (parsed.length > 0) setActiveCategory(parsed[0].id);
-                    } else {
-                        const defaultUnique = deduplicateByKey(initialCategories);
-                        setCategories(defaultUnique);
-                        if (defaultUnique.length > 0) setActiveCategory(defaultUnique[0].id);
-                    }
+                const savedCatsRaw = localStorage.getItem('categories');
+                let savedCatsList = [];
+                if (savedCatsRaw) {
+                    try { savedCatsList = JSON.parse(savedCatsRaw); } catch (e) {}
                 }
+
+                const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
+                let combinedCats = [];
+                if (catData && catData.length > 0) {
+                    combinedCats = [...catData];
+                    for (const savedCat of savedCatsList) {
+                        const idx = combinedCats.findIndex(c => (c.id && c.id === savedCat.id) || (c.name && c.name.toLowerCase().trim() === (savedCat.name || '').toLowerCase().trim()));
+                        if (idx !== -1) {
+                            combinedCats[idx] = { ...combinedCats[idx], ...savedCat };
+                        } else {
+                            combinedCats.push(savedCat);
+                        }
+                    }
+                } else {
+                    combinedCats = savedCatsList.length > 0 ? savedCatsList : initialCategories;
+                }
+                const finalCats = deduplicateByKey(combinedCats);
+                setCategories(finalCats);
+                if (finalCats.length > 0) setActiveCategory(prev => prev || finalCats[0].id);
 
                 // 2. Fetch Menu Items
-                const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
-                if (itemData && itemData.length > 0) {
-                    setItems(itemData);
-                } else {
-                    const savedItems = localStorage.getItem('menuItems');
-                    setItems(savedItems ? JSON.parse(savedItems) : menuItems);
+                const savedItemsRaw = localStorage.getItem('menuItems');
+                let savedItemsList = [];
+                if (savedItemsRaw) {
+                    try { savedItemsList = JSON.parse(savedItemsRaw); } catch (e) {}
                 }
 
-                // 3. Fetch Payment Settings (deduplicated)
-                const { data: payData } = await supabase.from('payment_settings').select('*').eq('is_active', true);
-                if (payData && payData.length > 0) {
-                    setPaymentSettings(deduplicateByKey(payData));
-                } else {
-                    const savedPayments = localStorage.getItem('paymentSettings');
-                    if (savedPayments) {
-                        const parsed = JSON.parse(savedPayments);
-                        setPaymentSettings(deduplicateByKey(Array.isArray(parsed) ? parsed.filter(p => p.is_active !== false) : []));
+                const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
+                let combinedItems = [];
+                if (itemData && itemData.length > 0) {
+                    combinedItems = itemData.map(normalizeItem);
+                    for (const savedItem of savedItemsList) {
+                        const normSaved = normalizeItem(savedItem);
+                        const idx = combinedItems.findIndex(i => (i.id && i.id === normSaved.id) || (i.name && i.name.toLowerCase().trim() === (normSaved.name || '').toLowerCase().trim()));
+                        if (idx !== -1) {
+                            combinedItems[idx] = { ...combinedItems[idx], ...normSaved };
+                        } else {
+                            combinedItems.push(normSaved);
+                        }
                     }
+                } else {
+                    combinedItems = savedItemsList.length > 0 ? savedItemsList.map(normalizeItem) : menuItems.map(normalizeItem);
                 }
+                setItems(combinedItems);
+
+                // 3. Fetch Payment Settings (deduplicated & merged with local storage)
+                const savedPaymentsRaw = localStorage.getItem('paymentSettings');
+                let savedPaymentsList = [];
+                if (savedPaymentsRaw) {
+                    try {
+                        const parsed = JSON.parse(savedPaymentsRaw);
+                        savedPaymentsList = Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {}
+                }
+
+                const { data: payData } = await supabase.from('payment_settings').select('*').eq('is_active', true);
+
+                let combinedPayments = [];
+                if (payData && payData.length > 0) {
+                    combinedPayments = payData.map(p => {
+                        const localMatch = savedPaymentsList.find(s =>
+                            (s.id && s.id === p.id) ||
+                            (s.name && s.name.toLowerCase().trim() === (p.name || '').toLowerCase().trim())
+                        );
+                        return {
+                            ...p,
+                            qr_url: p.qr_url || localMatch?.qr_url || null,
+                            account_number: p.account_number || localMatch?.account_number || localMatch?.accountNumber || 'N/A',
+                            account_name: p.account_name || localMatch?.account_name || localMatch?.accountName || 'N/A',
+                            instructions: p.instructions || localMatch?.instructions || ''
+                        };
+                    });
+
+                    for (const localP of savedPaymentsList) {
+                        if (localP.is_active !== false) {
+                            const existsInSupabase = combinedPayments.some(cp =>
+                                (cp.id && cp.id === localP.id) ||
+                                (cp.name && cp.name.toLowerCase().trim() === (localP.name || '').toLowerCase().trim())
+                            );
+                            if (!existsInSupabase) {
+                                combinedPayments.push(localP);
+                            }
+                        }
+                    }
+                } else if (savedPaymentsList.length > 0) {
+                    combinedPayments = savedPaymentsList.filter(p => p.is_active !== false);
+                } else {
+                    combinedPayments = [
+                        { id: 'gcash', name: 'GCash', account_number: '09947246294', account_name: 'Chilled and Frozen Hub', qr_url: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=GCash%3A%2009947246294%20(Chilled%20and%20Frozen%20Hub)', is_active: true },
+                        { id: 'cod', name: 'Cash on Delivery', account_number: 'N/A', account_name: 'Cash Payment', is_active: true },
+                        { id: 'maya', name: 'PayMaya', account_number: '09947246294', account_name: 'Chilled and Frozen Hub', qr_url: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=PayMaya%3A%2009947246294%20(Chilled%20and%20Frozen%20Hub)', is_active: true }
+                    ];
+                }
+
+                setPaymentSettings(deduplicateByKey(combinedPayments));
 
                 // 3b. Fetch Delivery Locations
+                const savedLocsRaw = localStorage.getItem('deliveryLocations');
+                let savedLocsList = savedLocsRaw ? JSON.parse(savedLocsRaw) : [];
+
                 const { data: locData } = await supabase.from('delivery_locations').select('*');
+                let combinedLocs = [];
                 if (locData && locData.length > 0) {
-                    setDeliveryLocations(locData);
-                } else {
-                    const savedLocs = localStorage.getItem('deliveryLocations');
-                    if (savedLocs) {
-                        try { setDeliveryLocations(JSON.parse(savedLocs)); } catch (e) {}
+                    combinedLocs = [...locData];
+                    for (const savedLoc of savedLocsList) {
+                        const idx = combinedLocs.findIndex(l => (l.id && l.id === savedLoc.id) || (l.name && l.name.toLowerCase().trim() === (savedLoc.name || '').toLowerCase().trim()));
+                        if (idx !== -1) {
+                            combinedLocs[idx] = { ...combinedLocs[idx], ...savedLoc };
+                        } else {
+                            combinedLocs.push(savedLoc);
+                        }
                     }
+                } else {
+                    combinedLocs = savedLocsList.length > 0 ? savedLocsList : DEFAULT_DELIVERY_LOCATIONS;
                 }
+                setDeliveryLocations(combinedLocs);
 
                 // 4. Fetch Order Types
                 const lalamoveType = { id: 'lalamove-delivery', name: 'Lalamove Delivery' };
@@ -196,12 +278,21 @@ const Home = () => {
                 }
 
                 // 5. Fetch Store Settings
+                const savedStoreRaw = localStorage.getItem('storeSettings');
+                const savedStore = savedStoreRaw ? JSON.parse(savedStoreRaw) : null;
+
                 const { data: storeData } = await supabase.from('store_settings').select('*').limit(1).single();
                 if (storeData) {
-                    setStoreSettings(storeData);
-                } else {
-                    const savedStore = localStorage.getItem('storeSettings');
-                    if (savedStore) setStoreSettings(JSON.parse(savedStore));
+                    const mergedStore = {
+                        ...storeData,
+                        ...(savedStore || {}),
+                        banner_images: (savedStore?.banner_images && savedStore.banner_images.length > 0)
+                            ? savedStore.banner_images
+                            : (storeData.banner_images || [])
+                    };
+                    setStoreSettings(mergedStore);
+                } else if (savedStore) {
+                    setStoreSettings(savedStore);
                 }
             } finally {
                 setIsLoading(false);
@@ -209,6 +300,20 @@ const Home = () => {
         };
 
         fetchData();
+
+        const handleReload = () => {
+            fetchData();
+        };
+
+        window.addEventListener('storage', handleReload);
+        window.addEventListener('store_data_updated', handleReload);
+        window.addEventListener('focus', handleReload);
+
+        return () => {
+            window.removeEventListener('storage', handleReload);
+            window.removeEventListener('store_data_updated', handleReload);
+            window.removeEventListener('focus', handleReload);
+        };
     }, []);
 
     // Slideshow functions
@@ -548,11 +653,7 @@ Thank you!`;
             <header className="app-header">
                 <div className="container header-container">
                     <Link to="/" className="brand">
-                        <img src={storeSettings.logo_url || '/logo.png'} alt="Chilled And Frozen Hub Logo" onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
-                        <div className="brand-text">
-                            <span className="brand-name">Chilled And Frozen Hub</span>
-                            <span className="brand-sub">Trader · Supplier · Distributor</span>
-                        </div>
+                        <img src="/logo.png" alt="Chilled and Frozen Hub" style={{ height: '54px', objectFit: 'contain' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                     </Link>
                     <div className="header-nav">
                         <button className="btn-accent" onClick={() => setIsCartOpen(true)}>
@@ -833,7 +934,7 @@ Thank you!`;
                         {/* Brand Column */}
                         <div className="footer-brand">
                             <div className="footer-logo-row">
-                                <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" className="footer-logo-img" onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
+                                <img src={storeSettings.logo_url || "/chilled-frozen-logo.png"} alt="Logo" className="footer-logo-img" onError={(e) => { e.currentTarget.src = '/chilled-frozen-logo.png'; }} />
                                 <div>
                                     <h3 className="footer-brand-title">{storeSettings.store_name}</h3>
                                     <span className="footer-brand-sub">Trader • Supplier • Distributor</span>
@@ -908,7 +1009,7 @@ Thank you!`;
                                 gap: '10px',
                                 alignItems: 'flex-start'
                             }}>
-                                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>📦</span>
+                                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}></span>
                                 <div>
                                     <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem', color: '#92400e' }}>
                                         Pumili ng available na weight ng kahon (box) sa storage
@@ -1034,7 +1135,12 @@ Thank you!`;
                                 <label style={{ fontWeight: 700, fontSize: '1rem', display: 'block', marginBottom: '15px' }}>Payment Method</label>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
                                     {paymentSettings.map(method => {
-                                        const isCash = (method.name || '').toLowerCase().includes('cash') || (method.name || '').toLowerCase().includes('cod');
+                                        const isCash = (name => {
+                                            if (!name) return false;
+                                            const lower = name.toLowerCase().trim();
+                                            if (lower.includes('gcash')) return false;
+                                            return lower.includes('cash') || lower.includes('cod');
+                                        })(method.name);
                                         return (
                                             <button
                                                 key={method.id}
@@ -1060,7 +1166,12 @@ Thank you!`;
                                 {paymentMethod && (() => {
                                     const method = paymentSettings.find(m => m.id === paymentMethod);
                                     if (!method) return null;
-                                    const isCash = (method.name || '').toLowerCase().includes('cash') || (method.name || '').toLowerCase().includes('cod');
+                                    const isCash = (name => {
+                                        if (!name) return false;
+                                        const lower = name.toLowerCase().trim();
+                                        if (lower.includes('gcash')) return false;
+                                        return lower.includes('cash') || lower.includes('cod');
+                                    })(method.name);
                                     if (isCash) {
                                         return (
                                             <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '20px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
@@ -1070,27 +1181,39 @@ Thank you!`;
                                             </div>
                                         );
                                     }
+                                    const qrCodeImage = method.qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(method.name + ': ' + (method.account_number || method.accountNumber || '09947246294'))}`;
                                     return (
                                         <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
                                             <div style={{ textAlign: 'center' }}>
-                                                <h4 style={{ color: 'var(--primary)', marginBottom: '15px' }}>Send {method.name} Payment</h4>
-                                                {method.qr_url && (
-                                                    <div style={{ background: 'white', padding: '10px', borderRadius: '12px', display: 'inline-block', marginBottom: '20px' }}>
-                                                        <img src={method.qr_url} style={{ width: '180px', height: '180px', borderRadius: '10px', objectFit: 'contain' }} alt="QR Code" />
+                                                <h4 style={{ color: 'var(--primary)', marginBottom: '14px', fontSize: '1.1rem', fontWeight: 800 }}>Send {method.name} Payment</h4>
+                                                <div style={{ background: 'white', padding: '15px', borderRadius: '16px', display: 'inline-block', marginBottom: '16px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
+                                                    <img src={qrCodeImage} style={{ width: '200px', height: '200px', borderRadius: '12px', objectFit: 'contain', display: 'block' }} alt={`${method.name} QR Code`} />
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary)', marginTop: '8px' }}>
+                                                        📷 Scan QR Code to Pay via {method.name}
                                                     </div>
-                                                )}
-                                                <div style={{ background: 'white', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Account Number</div>
+                                                </div>
+                                                <div style={{ background: 'white', padding: '15px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 600 }}>Account Number</div>
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
-                                                        <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>{method.account_number || method.accountNumber}</div>
+                                                        <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>{method.account_number || method.accountNumber || '09947246294'}</div>
                                                         <button
-                                                            onClick={() => { navigator.clipboard.writeText(method.account_number || method.accountNumber || ''); alert('Copied!'); }}
-                                                            style={{ border: 'none', background: 'var(--primary)', color: 'white', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, fontSize: '0.8rem' }}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const accNum = method.account_number || method.accountNumber || '09947246294';
+                                                                navigator.clipboard.writeText(accNum);
+                                                                alert('✓ Account number copied: ' + accNum);
+                                                            }}
+                                                            style={{ border: 'none', background: 'var(--primary)', color: 'white', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 700, fontSize: '0.8rem' }}
                                                         >
                                                             <Copy size={14} /> Copy
                                                         </button>
                                                     </div>
-                                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)' }}>{method.account_name || method.accountName}</div>
+                                                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#334155' }}>Account Name: {method.account_name || method.accountName || 'Chilled and Frozen Hub'}</div>
+                                                    {method.instructions && (
+                                                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px', fontStyle: 'italic' }}>
+                                                            {method.instructions}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

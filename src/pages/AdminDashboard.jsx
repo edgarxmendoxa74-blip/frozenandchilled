@@ -40,6 +40,8 @@ const AdminDashboard = () => {
     const [message, setMessage] = useState('');
 
     // --- STATE MANAGEMENT ---
+    const isUUID = (str) => Boolean(str && typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
     const normalizeItem = (item) => ({
         ...item,
         category_id: item.category_id || item.categoryId || '',
@@ -114,22 +116,27 @@ const AdminDashboard = () => {
         if (saved) {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed) && parsed.length > 0) {
-                // Deduplicate by name/id
+                // Normalize camelCase keys from old cached data + deduplicate
                 const unique = [];
                 const seen = new Set();
                 for (const item of parsed) {
                     const key = (item.name || item.id || '').toLowerCase().trim();
                     if (!seen.has(key)) {
                         seen.add(key);
-                        unique.push(item);
+                        unique.push({
+                            ...item,
+                            account_number: item.account_number || item.accountNumber || '',
+                            account_name: item.account_name || item.accountName || '',
+                        });
                     }
                 }
                 return unique;
             }
         }
         return [
-            { id: 'gcash', name: 'GCash', accountNumber: '09947246294', accountName: 'Chilled And Frozen Hub', is_active: true },
-            { id: 'cod', name: 'Cash on Delivery', accountNumber: 'N/A', accountName: 'Cash Payment', is_active: true }
+            { id: 'gcash', name: 'GCash', account_number: '09947246294', account_name: 'Chilled and Frozen Hub', qr_url: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=GCash%3A%2009947246294%20(Chilled%20and%20Frozen%20Hub)', is_active: true },
+            { id: 'cod', name: 'Cash on Delivery', account_number: 'N/A', account_name: 'Cash Payment', is_active: true },
+            { id: 'maya', name: 'PayMaya', account_number: '09947246294', account_name: 'Chilled and Frozen Hub', qr_url: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=PayMaya%3A%2009947246294%20(Chilled%20and%20Frozen%20Hub)', is_active: true }
         ];
     });
 
@@ -139,10 +146,10 @@ const AdminDashboard = () => {
             manual_status: 'auto',
             open_time: '08:00',
             close_time: '19:00',
-            store_name: 'Chilled And Frozen Hub',
+            store_name: 'Chilled and Frozen Hub',
             address: 'Caltex Road, Banaba South, Batangas City',
             contact: '09947246294 / 09949314800',
-            logo_url: '/logo.png',
+            logo_url: '/chilled-frozen-logo.png',
             banner_images: []
         };
     });
@@ -214,9 +221,9 @@ const AdminDashboard = () => {
         navigate('/admin');
     };
 
-    // ─────────────────────────────────────────────────────────────
+    // 
     // COMPONENT 1: INVENTORY MANAGER (DEDICATED STOCK CONTROL CENTER)
-    // ─────────────────────────────────────────────────────────────
+    // 
     const InventoryManager = () => {
         const [searchTerm, setSearchTerm] = useState('');
         const [filterCategory, setFilterCategory] = useState('all');
@@ -269,15 +276,20 @@ const AdminDashboard = () => {
                 out_of_stock: Boolean(stockData.out_of_stock || stockData.stock === 0)
             };
 
-            const { data, error } = await supabase.from('menu_items').update(updatePayload).eq('id', item.id).select().single();
-            if (error) {
-                console.error(error);
-                showMessage(`Error saving stock for ${item.name}: ${error.message}`);
-                return;
+            try {
+                if (isUUID(item.id)) {
+                    await supabase.from('menu_items').update(updatePayload).eq('id', item.id);
+                } else {
+                    await supabase.from('menu_items').update(updatePayload).eq('name', item.name);
+                }
+            } catch (err) {
+                console.error('Supabase stock update notice:', err);
             }
 
-            setItems(items.map(i => i.id === item.id ? { ...i, ...updatePayload } : i));
-            showMessage(`✅ Stock updated for "${item.name}"!`);
+            const updated = items.map(i => i.id === item.id || i.name === item.name ? { ...i, ...updatePayload } : i);
+            setItems(updated);
+            localStorage.setItem('menuItems', JSON.stringify(updated));
+            showMessage(` Stock updated for "${item.name}"!`);
         };
 
         const saveAllInventory = async () => {
@@ -287,6 +299,7 @@ const AdminDashboard = () => {
                     const stockData = localStockState[item.id] || {};
                     return {
                         id: item.id,
+                        name: item.name,
                         stock: Number(stockData.stock ?? item.stock ?? 0),
                         low_stock_threshold: Number(stockData.low_stock_threshold ?? item.low_stock_threshold ?? 5),
                         out_of_stock: Boolean(stockData.out_of_stock || Number(stockData.stock) === 0)
@@ -294,14 +307,26 @@ const AdminDashboard = () => {
                 });
 
                 for (const u of updates) {
-                    await supabase.from('menu_items').update({
-                        stock: u.stock,
-                        low_stock_threshold: u.low_stock_threshold,
-                        out_of_stock: u.out_of_stock
-                    }).eq('id', u.id);
+                    try {
+                        if (isUUID(u.id)) {
+                            await supabase.from('menu_items').update({
+                                stock: u.stock,
+                                low_stock_threshold: u.low_stock_threshold,
+                                out_of_stock: u.out_of_stock
+                            }).eq('id', u.id);
+                        } else {
+                            await supabase.from('menu_items').update({
+                                stock: u.stock,
+                                low_stock_threshold: u.low_stock_threshold,
+                                out_of_stock: u.out_of_stock
+                            }).eq('name', u.name);
+                        }
+                    } catch (e) {
+                        console.log('Stock item update notice:', e);
+                    }
                 }
 
-                setItems(items.map(item => {
+                const updated = items.map(item => {
                     const stockData = localStockState[item.id] || {};
                     return {
                         ...item,
@@ -309,9 +334,11 @@ const AdminDashboard = () => {
                         low_stock_threshold: Number(stockData.low_stock_threshold ?? item.low_stock_threshold ?? 5),
                         out_of_stock: Boolean(stockData.out_of_stock || Number(stockData.stock) === 0)
                     };
-                }));
+                });
 
-                showMessage('🎉 All inventory stock levels saved to database successfully!');
+                setItems(updated);
+                localStorage.setItem('menuItems', JSON.stringify(updated));
+                showMessage(' All inventory stock levels saved successfully!');
             } catch (err) {
                 console.error(err);
                 showMessage(`Error saving inventory: ${err.message}`);
@@ -374,17 +401,39 @@ const AdminDashboard = () => {
                 out_of_stock: formData.get('outOfStock') === 'on' || Number(formData.get('stock') || 0) === 0
             };
 
+            let finalItem;
             if (inventoryModal.id === 'new') {
-                if (!itemData.category_id) { showMessage('⚠️ Please select a category first.'); return; }
-                const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
-                if (error) { console.error(error); showMessage(`Error adding inventory: ${error.message}`); return; }
-                setItems([...items, data]);
-                showMessage(`✅ New inventory item "${itemData.name}" added successfully!`);
+                if (!itemData.category_id) { showMessage(' Please select a category first.'); return; }
+                try {
+                    const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
+                    if (error) throw error;
+                    finalItem = data;
+                } catch (err) {
+                    console.log('Supabase inventory insert notice:', err);
+                    finalItem = { ...itemData, id: 'item_' + Date.now() };
+                }
+                const updated = [...items, finalItem];
+                setItems(updated);
+                localStorage.setItem('menuItems', JSON.stringify(updated));
+                showMessage(` New inventory item "${itemData.name}" added successfully!`);
             } else {
-                const { data, error } = await supabase.from('menu_items').update(itemData).eq('id', inventoryModal.id).select().single();
-                if (error) { console.error(error); showMessage(`Error updating inventory: ${error.message}`); return; }
-                setItems(items.map(i => i.id === data.id ? data : i));
-                showMessage(`✅ Inventory item "${itemData.name}" updated successfully!`);
+                try {
+                    let res;
+                    if (isUUID(inventoryModal.id)) {
+                        res = await supabase.from('menu_items').update(itemData).eq('id', inventoryModal.id).select().single();
+                    } else {
+                        res = await supabase.from('menu_items').update(itemData).eq('name', inventoryModal.name).select().single();
+                    }
+                    if (res.error) throw res.error;
+                    finalItem = res.data;
+                } catch (err) {
+                    console.log('Supabase inventory update notice:', err);
+                    finalItem = { ...itemData, id: inventoryModal.id };
+                }
+                const updated = items.map(i => i.id === inventoryModal.id || i.name === inventoryModal.name ? { ...i, ...finalItem } : i);
+                setItems(updated);
+                localStorage.setItem('menuItems', JSON.stringify(updated));
+                showMessage(` Inventory item "${itemData.name}" updated successfully!`);
             }
 
             setInventoryModal(null);
@@ -393,10 +442,19 @@ const AdminDashboard = () => {
 
         const deleteInventoryItem = async (item) => {
             if (window.confirm(`Are you sure you want to delete "${item.name}" from inventory? This action cannot be undone.`)) {
-                const { error } = await supabase.from('menu_items').delete().eq('id', item.id);
-                if (error) { console.error(error); showMessage(`Error deleting: ${error.message}`); return; }
-                setItems(items.filter(i => i.id !== item.id));
-                showMessage(`🗑️ "${item.name}" removed from inventory.`);
+                try {
+                    if (isUUID(item.id)) {
+                        await supabase.from('menu_items').delete().eq('id', item.id);
+                    } else {
+                        await supabase.from('menu_items').delete().eq('name', item.name);
+                    }
+                } catch (err) {
+                    console.log('Supabase delete notice:', err);
+                }
+                const updated = items.filter(i => i.id !== item.id && i.name !== item.name);
+                setItems(updated);
+                localStorage.setItem('menuItems', JSON.stringify(updated));
+                showMessage(` "${item.name}" removed from inventory.`);
             }
         };
 
@@ -461,7 +519,7 @@ const AdminDashboard = () => {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-                {/* ─── ADD / EDIT INVENTORY MODAL ─── */}
+                {/*  ADD / EDIT INVENTORY MODAL  */}
                 {inventoryModal && (
                     <div style={modalOverlayStyle} onClick={() => { setInventoryModal(null); setModalImage(''); }}>
                         <div style={modalBoxStyle} onClick={e => e.stopPropagation()}>
@@ -469,7 +527,7 @@ const AdminDashboard = () => {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px', borderBottom: '2px solid #f1f5f9', paddingBottom: '18px' }}>
                                 <div>
                                     <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
-                                        {inventoryModal.id === 'new' ? '➕ Add New Inventory Item' : `✏️ Edit: ${inventoryModal.name}`}
+                                        {inventoryModal.id === 'new' ? ' Add New Inventory Item' : ` Edit: ${inventoryModal.name}`}
                                     </h3>
                                     <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
                                         {inventoryModal.id === 'new' ? 'Fill in the details below to add a new product to your inventory.' : 'Update the product details and stock information below.'}
@@ -486,7 +544,7 @@ const AdminDashboard = () => {
 
                                     {/* Product Image Upload */}
                                     <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1.5px dashed #cbd5e1' }}>
-                                        <label style={modalLabelStyle}>📸 Product Image</label>
+                                        <label style={modalLabelStyle}> Product Image</label>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '8px' }}>
                                             <div style={{ width: '80px', height: '80px', borderRadius: '14px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                 {(modalImage || inventoryModal.image) ? (
@@ -531,14 +589,14 @@ const AdminDashboard = () => {
 
                                     {/* Price Section */}
                                     <div style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', padding: '20px', borderRadius: '16px', border: '1px solid #bbf7d0' }}>
-                                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#166534', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>💰 Pricing</div>
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#166534', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}> Pricing</div>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                             <div>
-                                                <label style={modalLabelStyle}>Regular Price (₱) *</label>
+                                                <label style={modalLabelStyle}>Regular Price () *</label>
                                                 <input name="price" type="number" step="0.01" defaultValue={inventoryModal.price} placeholder="0.00" required style={modalInputStyle} />
                                             </div>
                                             <div>
-                                                <label style={modalLabelStyle}>Promo / Sale Price (₱)</label>
+                                                <label style={modalLabelStyle}>Promo / Sale Price ()</label>
                                                 <input name="promoPrice" type="number" step="0.01" defaultValue={inventoryModal.promo_price || ''} placeholder="Optional" style={modalInputStyle} />
                                             </div>
                                         </div>
@@ -546,14 +604,14 @@ const AdminDashboard = () => {
 
                                     {/* Stock Section */}
                                     <div style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', padding: '20px', borderRadius: '16px', border: '1px solid #93c5fd' }}>
-                                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1e40af', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>📦 Stock & Inventory</div>
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1e40af', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}> Stock & Inventory</div>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                             <div>
                                                 <label style={modalLabelStyle}>Current Stock Qty *</label>
                                                 <input name="stock" type="number" defaultValue={inventoryModal.stock} placeholder="0" required style={modalInputStyle} />
                                             </div>
                                             <div>
-                                                <label style={modalLabelStyle}>Low Stock Alert (≤)</label>
+                                                <label style={modalLabelStyle}>Low Stock Alert ()</label>
                                                 <input name="lowStockThreshold" type="number" defaultValue={inventoryModal.low_stock_threshold} placeholder="5" required style={modalInputStyle} />
                                             </div>
                                         </div>
@@ -593,19 +651,19 @@ const AdminDashboard = () => {
                     </div>
 
                     <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '18px', border: '1px solid #bbf7d0' }}>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🟢 Good Stock</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.5px' }}> Good Stock</div>
                         <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#15803d', margin: '4px 0' }}>{inStockCount}</div>
                         <span style={{ fontSize: '0.78rem', color: '#166534' }}>Sufficient quantity</span>
                     </div>
 
                     <div style={{ background: '#fffbe6', padding: '20px', borderRadius: '18px', border: '1px solid #fef08a' }}>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#854d0e', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠️ Low Stock Alert</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#854d0e', textTransform: 'uppercase', letterSpacing: '0.5px' }}> Low Stock Alert</div>
                         <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#b45309', margin: '4px 0' }}>{lowStockCount}</div>
                         <span style={{ fontSize: '0.78rem', color: '#854d0e' }}>Needs replenishment</span>
                     </div>
 
                     <div style={{ background: '#fef2f2', padding: '20px', borderRadius: '18px', border: '1px solid #fecaca' }}>
-                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🚫 Out of Stock</div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.5px' }}> Out of Stock</div>
                         <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#dc2626', margin: '4px 0' }}>{outOfStockCount}</div>
                         <span style={{ fontSize: '0.78rem', color: '#991b1b' }}>Hidden from buyers</span>
                     </div>
@@ -615,7 +673,7 @@ const AdminDashboard = () => {
                 <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                         <div>
-                            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>📦 Stock & Inventory Control Center</h2>
+                            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}> Stock & Inventory Control Center</h2>
                             <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>Manage stock levels, edit items, add new inventory, and toggle stock availability.</p>
                         </div>
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -632,8 +690,8 @@ const AdminDashboard = () => {
                     <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
                             <button onClick={() => setStockFilter('all')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'all' ? 'white' : 'transparent', color: stockFilter === 'all' ? '#0f172a' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer', boxShadow: stockFilter === 'all' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>All ({items.length})</button>
-                            <button onClick={() => setStockFilter('low')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'low' ? '#fef3c7' : 'transparent', color: stockFilter === 'low' ? '#92400e' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>⚠️ Low ({lowStockCount})</button>
-                            <button onClick={() => setStockFilter('out')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'out' ? '#fee2e2' : 'transparent', color: stockFilter === 'out' ? '#991b1b' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>🚫 Out ({outOfStockCount})</button>
+                            <button onClick={() => setStockFilter('low')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'low' ? '#fef3c7' : 'transparent', color: stockFilter === 'low' ? '#92400e' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}> Low ({lowStockCount})</button>
+                            <button onClick={() => setStockFilter('out')} style={{ padding: '7px 15px', borderRadius: '9px', border: 'none', background: stockFilter === 'out' ? '#fee2e2' : 'transparent', color: stockFilter === 'out' ? '#991b1b' : '#64748b', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}> Out ({outOfStockCount})</button>
                         </div>
 
                         <input
@@ -684,7 +742,7 @@ const AdminDashboard = () => {
                                                     <img src={item.image} style={{ width: '42px', height: '42px', borderRadius: '8px', objectFit: 'cover' }} alt="" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                                                     <div>
                                                         <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>{item.name}</div>
-                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Unit: {stockData.unit} · ₱{item.price}{item.promo_price ? ` → ₱${item.promo_price}` : ''}</span>
+                                                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Unit: {stockData.unit}  {item.price}{item.promo_price ? `  ${item.promo_price}` : ''}</span>
                                                     </div>
                                                 </div>
                                             </td>
@@ -710,7 +768,7 @@ const AdminDashboard = () => {
                                             </td>
                                             <td style={{ padding: '12px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>≤</span>
+                                                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}></span>
                                                     <input
                                                         type="number"
                                                         value={th}
@@ -731,7 +789,7 @@ const AdminDashboard = () => {
                                                         transition: 'all 0.2s'
                                                     }}
                                                 >
-                                                    {isOut ? '🔴 Out of Stock' : isLow ? '⚠️ Low Stock' : '🟢 In Stock'}
+                                                    {isOut ? ' Out of Stock' : isLow ? ' Low Stock' : ' In Stock'}
                                                 </button>
                                             </td>
                                             <td style={{ padding: '12px 15px', borderTopRightRadius: '12px', borderBottomRightRadius: '12px', textAlign: 'right' }}>
@@ -769,9 +827,9 @@ const AdminDashboard = () => {
         );
     };
 
-    // ─────────────────────────────────────────────────────────────
+    // 
     // COMPONENT 2: MENU MANAGER (PRODUCT CATALOG MANAGEMENT)
-    // ─────────────────────────────────────────────────────────────
+    // 
     const MenuManager = () => {
         const [editingItem, setEditingItem] = useState(null);
         const [searchTerm, setSearchTerm] = useState('');
@@ -811,15 +869,34 @@ const AdminDashboard = () => {
             let finalItem;
             if (editingItem.id === 'new') {
                 if (!itemData.category_id) { showMessage('Please select a category first.'); return; }
-                const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
-                if (error) { console.error(error); showMessage(`Error saving product: ${error.message}`); return; }
-                finalItem = data;
-                setItems([...items, finalItem]);
+                try {
+                    const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
+                    if (error) throw error;
+                    finalItem = data;
+                } catch (err) {
+                    console.log('Supabase product insert notice:', err);
+                    finalItem = { ...itemData, id: 'item_' + Date.now() };
+                }
+                const updated = [...items, finalItem];
+                setItems(updated);
+                localStorage.setItem('menuItems', JSON.stringify(updated));
             } else {
-                const { data, error } = await supabase.from('menu_items').update(itemData).eq('id', editingItem.id).select().single();
-                if (error) { console.error(error); showMessage(`Error updating product: ${error.message}`); return; }
-                finalItem = data;
-                setItems(items.map(i => i.id === finalItem.id ? finalItem : i));
+                try {
+                    let res;
+                    if (isUUID(editingItem.id)) {
+                        res = await supabase.from('menu_items').update(itemData).eq('id', editingItem.id).select().single();
+                    } else {
+                        res = await supabase.from('menu_items').update(itemData).eq('name', editingItem.name).select().single();
+                    }
+                    if (res.error) throw res.error;
+                    finalItem = res.data;
+                } catch (err) {
+                    console.log('Supabase product update notice:', err);
+                    finalItem = { ...itemData, id: editingItem.id };
+                }
+                const updated = items.map(i => i.id === editingItem.id || i.name === editingItem.name ? { ...i, ...finalItem } : i);
+                setItems(updated);
+                localStorage.setItem('menuItems', JSON.stringify(updated));
             }
 
             setEditingItem(null);
@@ -828,9 +905,19 @@ const AdminDashboard = () => {
 
         const deleteItem = async (id) => {
             if (window.confirm('Are you sure you want to delete this product?')) {
-                const { error } = await supabase.from('menu_items').delete().eq('id', id);
-                if (error) { console.error(error); showMessage(`Error deleting product: ${error.message}`); return; }
-                setItems(items.filter(i => i.id !== id));
+                const target = items.find(i => i.id === id);
+                try {
+                    if (isUUID(id)) {
+                        await supabase.from('menu_items').delete().eq('id', id);
+                    } else if (target) {
+                        await supabase.from('menu_items').delete().eq('name', target.name);
+                    }
+                } catch (err) {
+                    console.log('Supabase product delete notice:', err);
+                }
+                const updated = items.filter(i => i.id !== id);
+                setItems(updated);
+                localStorage.setItem('menuItems', JSON.stringify(updated));
                 showMessage('Product deleted.');
             }
         };
@@ -845,7 +932,7 @@ const AdminDashboard = () => {
             <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>🍽️ Product Catalog & Menu Editor</h2>
+                        <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}> Product Catalog & Menu Editor</h2>
                         <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>Create, update pricing, descriptions, images, and category assignments.</p>
                     </div>
 
@@ -904,11 +991,11 @@ const AdminDashboard = () => {
                                     <td style={{ padding: '12px' }}>
                                         {item.promo_price ? (
                                             <div>
-                                                <span style={{ textDecoration: 'line-through', color: '#94a3b8', fontSize: '0.75rem', marginRight: '4px' }}>₱{item.price}</span>
-                                                <span style={{ color: '#dc2626', fontWeight: 800, fontSize: '0.92rem' }}>₱{item.promo_price} /{item.unit || 'kg'}</span>
+                                                <span style={{ textDecoration: 'line-through', color: '#94a3b8', fontSize: '0.75rem', marginRight: '4px' }}>{item.price}</span>
+                                                <span style={{ color: '#dc2626', fontWeight: 800, fontSize: '0.92rem' }}>{item.promo_price} /{item.unit || 'kg'}</span>
                                             </div>
                                         ) : (
-                                            <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>₱{item.price} /{item.unit || 'kg'}</span>
+                                            <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>{item.price} /{item.unit || 'kg'}</span>
                                         )}
                                     </td>
                                     <td style={{ padding: '12px' }}>
@@ -940,7 +1027,7 @@ const AdminDashboard = () => {
         return (
             <div style={{ background: 'white', padding: '30px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 900, color: '#0c250d' }}>{editingItem.id === 'new' ? '✨ Create New Product' : `✏️ Edit Product: ${editingItem.name}`}</h3>
+                    <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 900, color: '#0c250d' }}>{editingItem.id === 'new' ? ' Create New Product' : ` Edit Product: ${editingItem.name}`}</h3>
                     <button onClick={() => setEditingItem(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24} /></button>
                 </div>
                 <form onSubmit={handleSubmit}>
@@ -964,11 +1051,11 @@ const AdminDashboard = () => {
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '15px' }}>
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Price (₱)</label>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Price ()</label>
                                 <input name="price" type="number" step="0.01" defaultValue={editingItem.price} placeholder="1850" required style={inputStyle} />
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Promo Price (₱ - Optional)</label>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Promo Price ( - Optional)</label>
                                 <input name="promoPrice" type="number" step="0.01" defaultValue={editingItem.promo_price || ''} placeholder="Discount price" style={inputStyle} />
                             </div>
                             <div>
@@ -1025,35 +1112,68 @@ const AdminDashboard = () => {
         );
     };
 
-    // ─────────────────────────────────────────────────────────────
+    // 
     // OTHER EXISTING SUB-COMPONENTS (CATEGORIES, ORDERS, SETTINGS)
-    // ─────────────────────────────────────────────────────────────
+    // 
     const CategoryManager = () => {
         const [editingCat, setEditingCat] = useState(null);
 
         const handleSaveCat = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            const name = formData.get('name');
+            const name = formData.get('name')?.trim();
+            if (!name) return;
 
+            let savedCat;
             if (editingCat.id === 'new') {
-                const { data, error } = await supabase.from('categories').insert([{ name, sort_order: categories.length + 1 }]).select().single();
-                if (error) { showMessage(`Error: ${error.message}`); return; }
-                setCategories([...categories, data]);
+                try {
+                    const { data, error } = await supabase.from('categories').insert([{ name, sort_order: categories.length + 1 }]).select().single();
+                    if (error) throw error;
+                    savedCat = data;
+                } catch (err) {
+                    console.log('Supabase category insert notice:', err);
+                    savedCat = { id: 'cat_' + Date.now(), name, sort_order: categories.length + 1 };
+                }
+                const updated = [...categories, savedCat];
+                setCategories(updated);
+                localStorage.setItem('categories', JSON.stringify(updated));
             } else {
-                const { data, error } = await supabase.from('categories').update({ name }).eq('id', editingCat.id).select().single();
-                if (error) { showMessage(`Error: ${error.message}`); return; }
-                setCategories(categories.map(c => c.id === data.id ? data : c));
+                try {
+                    let res;
+                    if (isUUID(editingCat.id)) {
+                        res = await supabase.from('categories').update({ name }).eq('id', editingCat.id).select().single();
+                    } else {
+                        res = await supabase.from('categories').update({ name }).eq('name', editingCat.name).select().single();
+                    }
+                    if (res.error) throw res.error;
+                    savedCat = res.data;
+                } catch (err) {
+                    console.log('Supabase category update notice:', err);
+                    savedCat = { ...editingCat, name };
+                }
+                const updated = categories.map(c => c.id === editingCat.id || c.name === editingCat.name ? { ...c, ...savedCat } : c);
+                setCategories(updated);
+                localStorage.setItem('categories', JSON.stringify(updated));
             }
             setEditingCat(null);
-            showMessage('Category saved!');
+            showMessage('Category saved successfully!');
         };
 
         const deleteCat = async (id) => {
-            if (window.confirm('⚠️ WARNING: Deleting this category will PERMANENTLY DELETE all products inside it. This cannot be undone. Continue?')) {
-                const { error } = await supabase.from('categories').delete().eq('id', id);
-                if (error) { showMessage(`Error: ${error.message}`); return; }
-                setCategories(categories.filter(c => c.id !== id));
+            if (window.confirm(' WARNING: Deleting this category will PERMANENTLY DELETE all products inside it. This cannot be undone. Continue?')) {
+                const target = categories.find(c => c.id === id);
+                try {
+                    if (isUUID(id)) {
+                        await supabase.from('categories').delete().eq('id', id);
+                    } else if (target) {
+                        await supabase.from('categories').delete().eq('name', target.name);
+                    }
+                } catch (err) {
+                    console.log('Supabase category delete notice:', err);
+                }
+                const updated = categories.filter(c => c.id !== id);
+                setCategories(updated);
+                localStorage.setItem('categories', JSON.stringify(updated));
                 showMessage('Category deleted.');
             }
         };
@@ -1071,7 +1191,7 @@ const AdminDashboard = () => {
         return (
             <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                    <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>🏷️ Category Management</h2>
+                    <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}> Category Management</h2>
                     <button onClick={() => setEditingCat({ id: 'new', name: '' })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
                         <Plus size={18} /> Add Category
                     </button>
@@ -1111,9 +1231,70 @@ const AdminDashboard = () => {
             showMessage(`Order status changed to "${status}"`);
         };
 
+        const deleteOrder = async (orderId, orderNumber) => {
+            if (!window.confirm(`Delete Order #${orderNumber}? This cannot be undone.`)) return;
+            const { error } = await supabase.from('orders').delete().eq('id', orderId);
+            if (error) { showMessage(`Error: ${error.message}`); return; }
+            const updated = orders.filter(o => o.id !== orderId);
+            setOrders(updated);
+            localStorage.setItem('orders', JSON.stringify(updated));
+            showMessage(` Order #${orderNumber} deleted.`);
+        };
+
+        const exportOrdersCSV = () => {
+            if (orders.length === 0) { showMessage('No orders to export.'); return; }
+
+            const headers = ['Order #', 'Date', 'Customer Name', 'Phone', 'Order Type', 'Payment Method', 'Delivery Location', 'Address', 'Items', 'Subtotal', 'Delivery Charge', 'Total', 'Status'];
+
+            const rows = orders.map(o => {
+                const cd = o.customer_details || {};
+                const items = Array.isArray(o.items) ? o.items.join(' | ') : (o.items || '');
+                const deliveryCharge = o.total_amount && o.subtotal ? (o.total_amount - o.subtotal) : '';
+                return [
+                    o.order_number || o.id?.slice(0, 8) || '',
+                    o.timestamp ? new Date(o.timestamp).toLocaleString() : '',
+                    cd.name || '',
+                    cd.phone || '',
+                    o.order_type || '',
+                    o.payment_method || '',
+                    cd.delivery_location || '',
+                    cd.address || '',
+                    `"${items.replace(/"/g, '""')}"`,
+                    '',
+                    '',
+                    o.total_amount || '',
+                    o.status || ''
+                ];
+            });
+
+            const csvContent = [headers, ...rows]
+                .map(row => row.join(','))
+                .join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `orders_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showMessage(` Exported ${orders.length} orders to CSV!`);
+        };
+
         return (
             <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-                <h2 style={{ margin: '0 0 24px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>🛒 Customer Orders History</h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+                    <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}> Customer Orders History</h2>
+                    <button
+                        onClick={exportOrdersCSV}
+                        disabled={orders.length === 0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: 'none', background: orders.length === 0 ? '#e2e8f0' : 'linear-gradient(135deg, #0c250d 0%, #1a4a1c 100%)', color: orders.length === 0 ? '#94a3b8' : '#F9B700', fontWeight: 800, fontSize: '0.88rem', cursor: orders.length === 0 ? 'not-allowed' : 'pointer', boxShadow: orders.length === 0 ? 'none' : '0 4px 12px rgba(12,37,13,0.25)', fontFamily: 'Outfit, sans-serif' }}
+                    >
+                        <FileText size={16} /> Export CSV ({orders.length})
+                    </button>
+                </div>
                 {orders.length === 0 ? (
                     <p style={{ color: '#64748b', textAlign: 'center', padding: '40px' }}>No orders placed yet.</p>
                 ) : (
@@ -1125,23 +1306,32 @@ const AdminDashboard = () => {
                                         <span style={{ fontWeight: 900, fontSize: '1.1rem', color: 'var(--primary)' }}>Order #{order.order_number || order.id.slice(0, 8)}</span>
                                         <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '12px' }}>{new Date(order.timestamp).toLocaleString()}</span>
                                     </div>
-                                    <select
-                                        value={order.status || 'Pending'}
-                                        onChange={(e) => updateOrderStatus(order.id, e.target.value)}
-                                        style={{ padding: '6px 12px', borderRadius: '10px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', border: '1px solid #cbd5e1' }}
-                                    >
-                                        <option value="Pending">🟡 Pending</option>
-                                        <option value="Preparing">🟠 Preparing</option>
-                                        <option value="Ready">🟢 Ready</option>
-                                        <option value="Completed">✅ Completed</option>
-                                        <option value="Cancelled">❌ Cancelled</option>
-                                    </select>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <select
+                                            value={order.status || 'Pending'}
+                                            onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                                            style={{ padding: '6px 12px', borderRadius: '10px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', border: '1px solid #cbd5e1' }}
+                                        >
+                                            <option value="Pending"> Pending</option>
+                                            <option value="Preparing"> Preparing</option>
+                                            <option value="Ready"> Ready</option>
+                                            <option value="Completed"> Completed</option>
+                                            <option value="Cancelled"> Cancelled</option>
+                                        </select>
+                                        <button
+                                            onClick={() => deleteOrder(order.id, order.order_number || order.id.slice(0, 8))}
+                                            title="Delete order"
+                                            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}
+                                        >
+                                            <Trash2 size={14} /> Delete
+                                        </button>
+                                    </div>
                                 </div>
                                 <div style={{ fontSize: '0.88rem', color: '#334155', marginBottom: '10px' }}>
-                                    <strong>Customer:</strong> {order.customer_details?.name || 'Guest'} ({order.customer_details?.phone || 'N/A'}) • <strong>Type:</strong> {order.order_type} • <strong>Payment:</strong> {order.payment_method}
+                                    <strong>Customer:</strong> {order.customer_details?.name || 'Guest'} ({order.customer_details?.phone || 'N/A'})  <strong>Type:</strong> {order.order_type}  <strong>Payment:</strong> {order.payment_method}
                                 </div>
                                 <div style={{ fontWeight: 800, color: 'var(--primary-dark)', fontSize: '1rem' }}>
-                                    Total: ₱{order.total_amount}
+                                    Total: {order.total_amount}
                                 </div>
                             </div>
                         ))}
@@ -1183,7 +1373,7 @@ const AdminDashboard = () => {
                 console.log('Supabase location sync notice:', err);
             }
 
-            showMessage(editingLoc ? `✅ Delivery charge for ${newLoc.name} updated!` : `🎉 Added delivery location ${newLoc.name}!`);
+            showMessage(editingLoc ? ` Delivery charge for ${newLoc.name} updated!` : ` Added delivery location ${newLoc.name}!`);
             setIsLocModalOpen(false);
         };
 
@@ -1200,7 +1390,7 @@ const AdminDashboard = () => {
                 console.log('Supabase location delete notice:', err);
             }
 
-            showMessage(`🗑️ Delivery location "${name}" removed.`);
+            showMessage(` Delivery location "${name}" removed.`);
         };
 
         const filteredLocations = deliveryLocations.filter(l =>
@@ -1212,7 +1402,7 @@ const AdminDashboard = () => {
                 {/* Fulfillment Summary Cards */}
                 <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
                     <h2 style={{ margin: '0 0 8px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
-                        🚚 Fulfillment Methods
+                         Fulfillment Methods
                     </h2>
                     <p style={{ color: '#64748b', fontSize: '0.88rem', margin: '0 0 20px' }}>
                         Supported checkout order types for store customers.
@@ -1222,14 +1412,14 @@ const AdminDashboard = () => {
                             <div style={{ background: '#166534', color: 'white', borderRadius: '50%', padding: '10px', display: 'flex' }}><ShoppingBag size={22} /></div>
                             <div>
                                 <h4 style={{ margin: '0 0 2px', fontSize: '1.05rem', color: '#166534', fontWeight: 900 }}>Pickup</h4>
-                                <span style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 700 }}>🟢 Active (Free / Store Claim)</span>
+                                <span style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 700 }}> Active (Free / Store Claim)</span>
                             </div>
                         </div>
                         <div style={{ padding: '18px', background: '#f0fdf4', borderRadius: '16px', border: '1.5px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '14px' }}>
                             <div style={{ background: '#166534', color: 'white', borderRadius: '50%', padding: '10px', display: 'flex' }}><Truck size={22} /></div>
                             <div>
                                 <h4 style={{ margin: '0 0 2px', fontSize: '1.05rem', color: '#166534', fontWeight: 900 }}>Delivery</h4>
-                                <span style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 700 }}>🟢 Active ({deliveryLocations.length} Barangay Rates)</span>
+                                <span style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 700 }}> Active ({deliveryLocations.length} Barangay Rates)</span>
                             </div>
                         </div>
                     </div>
@@ -1240,7 +1430,7 @@ const AdminDashboard = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
                         <div>
                             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
-                                📍 Barangay Delivery Rates
+                                 Barangay Delivery Rates
                             </h3>
                             <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.85rem' }}>
                                 Customize delivery charges per location/barangay
@@ -1286,7 +1476,7 @@ const AdminDashboard = () => {
                             <thead>
                                 <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                                     <th style={{ padding: '14px 16px', fontWeight: 800, fontSize: '0.85rem', color: '#475569' }}>BARANGAY / LOCATION</th>
-                                    <th style={{ padding: '14px 16px', fontWeight: 800, fontSize: '0.85rem', color: '#475569' }}>DELIVERY FEE (₱)</th>
+                                    <th style={{ padding: '14px 16px', fontWeight: 800, fontSize: '0.85rem', color: '#475569' }}>DELIVERY FEE ()</th>
                                     <th style={{ padding: '14px 16px', fontWeight: 800, fontSize: '0.85rem', color: '#475569', textAlign: 'right' }}>ACTIONS</th>
                                 </tr>
                             </thead>
@@ -1294,11 +1484,11 @@ const AdminDashboard = () => {
                                 {filteredLocations.map((loc, idx) => (
                                     <tr key={loc.id || loc.name || idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
                                         <td style={{ padding: '14px 16px', fontWeight: 700, color: '#0c250d', fontSize: '0.95rem' }}>
-                                            📍 {loc.name}
+                                             {loc.name}
                                         </td>
                                         <td style={{ padding: '14px 16px' }}>
                                             <span style={{ background: '#dcfce7', color: '#166534', padding: '6px 14px', borderRadius: '20px', fontWeight: 800, fontSize: '0.9rem' }}>
-                                                ₱{loc.charge}
+                                                {loc.charge}
                                             </span>
                                         </td>
                                         <td style={{ padding: '14px 16px', textAlign: 'right' }}>
@@ -1370,7 +1560,7 @@ const AdminDashboard = () => {
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
-                                            Delivery Charge Fee (₱) *
+                                            Delivery Charge Fee () *
                                         </label>
                                         <input
                                             type="number"
@@ -1401,6 +1591,7 @@ const AdminDashboard = () => {
         const [isModalOpen, setIsModalOpen] = useState(false);
         const [editingMethod, setEditingMethod] = useState(null);
         const [isUploadingQR, setIsUploadingQR] = useState(false);
+        const [uploadStatus, setUploadStatus] = useState(''); // local  avoids parent re-render
         const [formData, setFormData] = useState({
             id: '',
             name: '',
@@ -1411,29 +1602,36 @@ const AdminDashboard = () => {
             is_active: true
         });
 
+        // Ref always mirrors latest formData  safe to read in async handlers
+        const formDataRef = React.useRef(formData);
+        React.useEffect(() => { formDataRef.current = formData; }, [formData]);
+
         const isCashMethod = (name) => {
-            const lower = (name || '').toLowerCase();
+            if (!name) return false;
+            const lower = (name || '').toLowerCase().trim();
+            if (lower.includes('gcash') || lower.includes('maya') || lower.includes('paymaya')) return false;
             return lower.includes('cash') || lower.includes('cod');
+        };
+
+        const resetModal = () => {
+            setIsModalOpen(false);
+            setEditingMethod(null);
+            setUploadStatus('');
+            setFormData({ id: '', name: '', account_number: '', account_name: '', instructions: '', qr_url: '', is_active: true });
         };
 
         const openAddModal = () => {
             setEditingMethod(null);
-            setFormData({
-                id: 'pay_' + Date.now(),
-                name: '',
-                account_number: '',
-                account_name: '',
-                instructions: '',
-                qr_url: '',
-                is_active: true
-            });
+            setUploadStatus('');
+            setFormData({ id: '', name: '', account_number: '', account_name: '', instructions: '', qr_url: '', is_active: true });
             setIsModalOpen(true);
         };
 
         const openEditModal = (method) => {
             setEditingMethod(method);
+            setUploadStatus('');
             setFormData({
-                id: method.id,
+                id: method.id || '',
                 name: method.name || '',
                 account_number: method.account_number || method.accountNumber || '',
                 account_name: method.account_name || method.accountName || '',
@@ -1447,117 +1645,170 @@ const AdminDashboard = () => {
         const handleQRUpload = async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
+
+            // Validate file type and size
+            if (!file.type.startsWith('image/')) {
+                setUploadStatus(' Please select an image file.');
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                setUploadStatus(' Image must be under 5MB.');
+                return;
+            }
+
             setIsUploadingQR(true);
+            setUploadStatus('Reading image');
+
+            // Step 1: Convert to base64 immediately (always works, no network needed)
+            const toBase64 = (f) => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                reader.readAsDataURL(f);
+            });
+
+            let base64Value = '';
             try {
-                const fileExt = file.name.split('.').pop();
-                const fileName = `qr_${formData.id}_${Date.now()}.${fileExt}`;
+                base64Value = await toBase64(file);
+            } catch {
+                setIsUploadingQR(false);
+                setUploadStatus(' Error reading image file.');
+                return;
+            }
+
+            // Set base64 immediately  this is the guaranteed fallback
+            setFormData(prev => ({ ...prev, qr_url: base64Value }));
+            setUploadStatus(' QR ready. Trying cloud upload');
+
+            // Step 2: Try Supabase Storage for a proper public URL
+            try {
+                const fileExt = (file.name.split('.').pop() || 'png').toLowerCase();
+                const fileName = `qr_${Date.now()}.${fileExt}`;
                 const filePath = `qr-codes/${fileName}`;
 
                 const { error: uploadError } = await supabase.storage
                     .from('products')
-                    .upload(filePath, file);
+                    .upload(filePath, file, { upsert: true });
 
-                if (uploadError) {
-                    // Fallback to base64 data URL if bucket isn't configured
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        setFormData(prev => ({ ...prev, qr_url: reader.result }));
+                if (!uploadError) {
+                    const { data: urlData } = supabase.storage.from('products').getPublicUrl(filePath);
+                    if (urlData?.publicUrl) {
+                        setFormData(prev => ({ ...prev, qr_url: urlData.publicUrl }));
+                        setUploadStatus(' QR uploaded to cloud storage!');
                         setIsUploadingQR(false);
-                        showMessage('📎 QR code loaded (local).');
-                    };
-                    reader.readAsDataURL(file);
-                    return;
+                        return;
+                    }
                 }
-
-                const { data } = supabase.storage.from('products').getPublicUrl(filePath);
-                if (data?.publicUrl) {
-                    setFormData(prev => ({ ...prev, qr_url: data.publicUrl }));
-                    showMessage('✅ QR code uploaded!');
-                }
-            } catch (err) {
-                console.error(err);
-                showMessage('Error uploading QR code.');
-            } finally {
-                setIsUploadingQR(false);
+            } catch {
+                // Storage not configured  base64 already saved above, that's fine
             }
+
+            setUploadStatus(' QR code ready (stored as image data).');
+            setIsUploadingQR(false);
         };
 
         const handleSaveMethod = async (e) => {
             e.preventDefault();
-            if (!formData.name.trim()) {
+            // Use ref to get the absolute latest values regardless of React batching
+            const current = formDataRef.current;
+
+            if (!current.name.trim()) {
                 showMessage('Please enter a payment method name');
                 return;
             }
 
+            const isCash = isCashMethod(current.name);
             const methodPayload = {
-                name: formData.name.trim(),
-                account_number: formData.account_number.trim() || 'N/A',
-                account_name: formData.account_name.trim() || 'N/A',
-                instructions: formData.instructions.trim(),
-                qr_url: isCashMethod(formData.name) ? null : (formData.qr_url || null),
-                is_active: formData.is_active
+                name: current.name.trim(),
+                account_number: (current.account_number || '').trim() || 'N/A',
+                account_name: (current.account_name || '').trim() || 'N/A',
+                instructions: (current.instructions || '').trim(),
+                qr_url: isCash ? null : (current.qr_url || null),
+                is_active: current.is_active
             };
 
+            const isEditing = editingMethod && editingMethod.id;
+            const isRealUUID = isEditing && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editingMethod.id);
+
             try {
-                if (editingMethod && editingMethod.id) {
-                    // UPDATE existing row using its real UUID
-                    const { data, error } = await supabase
-                        .from('payment_settings')
-                        .update(methodPayload)
-                        .eq('id', editingMethod.id)
-                        .select()
-                        .single();
-                    if (error) throw error;
-                    const saved = data || { ...methodPayload, id: editingMethod.id };
-                    const updatedList = paymentSettings.map(p => p.id === editingMethod.id ? saved : p);
+                let saved;
+                if (isEditing) {
+                    if (isRealUUID) {
+                        const { data, error } = await supabase
+                            .from('payment_settings')
+                            .update(methodPayload)
+                            .eq('id', editingMethod.id)
+                            .select()
+                            .single();
+                        if (error) throw error;
+                        saved = data;
+                    } else {
+                        // Fallback: match by name for non-UUID legacy IDs
+                        const { data, error } = await supabase
+                            .from('payment_settings')
+                            .update(methodPayload)
+                            .eq('name', editingMethod.name)
+                            .select()
+                            .single();
+                        if (error) throw error;
+                        saved = data;
+                    }
+                    const updatedList = paymentSettings.map(p =>
+                        p.id === editingMethod.id ? (saved || { ...methodPayload, id: editingMethod.id }) : p
+                    );
                     setPaymentSettings(updatedList);
                     localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
                 } else {
-                    // INSERT new row — let Supabase generate the UUID
                     const { data, error } = await supabase
                         .from('payment_settings')
                         .insert([methodPayload])
                         .select()
                         .single();
                     if (error) throw error;
-                    const saved = data || { ...methodPayload, id: 'pay_' + Date.now() };
-                    const updatedList = [...paymentSettings, saved];
+                    saved = data;
+                    const updatedList = [...paymentSettings, saved || { ...methodPayload, id: 'pay_' + Date.now() }];
                     setPaymentSettings(updatedList);
                     localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
                 }
             } catch (err) {
-                console.log('Supabase payment sync error:', err);
-                // Fallback: update local state only so the UI still reflects the change
-                const fallback = { ...methodPayload, id: editingMethod?.id || 'pay_' + Date.now() };
-                const updatedList = editingMethod
+                console.warn('Supabase payment sync, using local fallback:', err.message);
+                // Offline/error fallback  save locally so the UI reflects the change
+                const fallbackId = isEditing ? editingMethod.id : 'pay_' + Date.now();
+                const fallback = { ...methodPayload, id: fallbackId };
+                const updatedList = isEditing
                     ? paymentSettings.map(p => p.id === editingMethod.id ? fallback : p)
                     : [...paymentSettings, fallback];
                 setPaymentSettings(updatedList);
                 localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
             }
 
-            showMessage(editingMethod ? '✅ Payment method updated!' : '🎉 New payment method added!');
-            setIsModalOpen(false);
+            showMessage(isEditing ? ' Payment method updated!' : ' New payment method added!');
+            resetModal();
         };
 
         const handleDeleteMethod = async (id, name) => {
             if (paymentSettings.length <= 1) {
-                showMessage('⚠️ You must keep at least one payment method active!');
+                showMessage(' You must keep at least one payment method active!');
                 return;
             }
-            if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
+            if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
 
             const updatedList = paymentSettings.filter(p => p.id !== id);
             setPaymentSettings(updatedList);
             localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
 
             try {
-                await supabase.from('payment_settings').delete().eq('id', id);
+                const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+                if (isRealUUID) {
+                    await supabase.from('payment_settings').delete().eq('id', id);
+                } else {
+                    await supabase.from('payment_settings').delete().eq('name', name);
+                }
             } catch (err) {
-                console.log('Supabase delete error:', err);
+                console.warn('Supabase delete notice:', err);
             }
 
-            showMessage(`🗑️ Payment method "${name}" deleted.`);
+            showMessage(` "${name}" deleted.`);
         };
 
         const toggleActiveStatus = async (method) => {
@@ -1567,52 +1818,37 @@ const AdminDashboard = () => {
             localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
 
             try {
-                await supabase
-                    .from('payment_settings')
-                    .update({ is_active: updated.is_active })
-                    .eq('id', method.id);
+                const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(method.id);
+                if (isRealUUID) {
+                    await supabase.from('payment_settings').update({ is_active: updated.is_active }).eq('id', method.id);
+                } else {
+                    await supabase.from('payment_settings').update({ is_active: updated.is_active }).eq('name', method.name);
+                }
             } catch (err) {
-                console.log('Supabase toggle error:', err);
+                console.warn('Supabase toggle notice:', err);
             }
 
-            showMessage(`${method.name} is now ${updated.is_active ? '🟢 Active' : '🔴 Inactive'}`);
+            showMessage(`${method.name} is now ${updated.is_active ? ' Active' : ' Inactive'}`);
         };
 
         return (
             <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-                {/* Header with Add Button */}
+                {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '14px' }}>
                     <div>
                         <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
-                            💳 Payment Methods Manager
+                             Payment Methods Manager
                         </h2>
                         <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.88rem' }}>
                             Manage customer payment channels (GCash, Maya, Bank Transfer, COD, etc.)
                         </p>
                     </div>
-                    <button
-                        onClick={openAddModal}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            background: '#0c250d',
-                            color: '#F9B700',
-                            border: 'none',
-                            padding: '10px 20px',
-                            borderRadius: '12px',
-                            fontWeight: 800,
-                            fontSize: '0.9rem',
-                            cursor: 'pointer',
-                            boxShadow: '0 4px 14px rgba(12,37,13,0.25)',
-                            transition: 'transform 0.2s'
-                        }}
-                    >
+                    <button onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#0c250d', color: '#F9B700', border: 'none', padding: '10px 20px', borderRadius: '12px', fontWeight: 800, fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 14px rgba(12,37,13,0.25)' }}>
                         <Plus size={18} /> Add Payment Method
                     </button>
                 </div>
 
-                {/* Grid of Payment Methods */}
+                {/* Payment Method Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '18px' }}>
                     {paymentSettings.map(p => {
                         const accNo = p.account_number || p.accountNumber || 'N/A';
@@ -1620,23 +1856,9 @@ const AdminDashboard = () => {
                         const isActive = p.is_active !== undefined ? p.is_active : true;
 
                         return (
-                            <div
-                                key={p.id}
-                                style={{
-                                    padding: '22px',
-                                    background: isActive ? '#ffffff' : '#f8fafc',
-                                    borderRadius: '16px',
-                                    border: isActive ? '1.5px solid #cbd5e1' : '1px dashed #cbd5e1',
-                                    boxShadow: isActive ? '0 4px 15px rgba(0,0,0,0.04)' : 'none',
-                                    opacity: isActive ? 1 : 0.7,
-                                    position: 'relative',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    justifyContent: 'space-between'
-                                }}
-                            >
+                            <div key={p.id} style={{ padding: '22px', background: isActive ? '#fff' : '#f8fafc', borderRadius: '16px', border: isActive ? '1.5px solid #cbd5e1' : '1px dashed #cbd5e1', boxShadow: isActive ? '0 4px 15px rgba(0,0,0,0.04)' : 'none', opacity: isActive ? 1 : 0.7, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                 <div>
-                                    {/* Top row: Title + Status Pill */}
+                                    {/* Title row */}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                             <div style={{ background: isActive ? '#f0fdf4' : '#f1f5f9', color: isActive ? '#166534' : '#64748b', padding: '8px', borderRadius: '10px' }}>
@@ -1644,28 +1866,16 @@ const AdminDashboard = () => {
                                             </div>
                                             <div>
                                                 <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#0c250d', fontWeight: 900 }}>{p.name}</h4>
-                                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>ID: {p.id}</span>
+                                                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>ID: {p.id}</span>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => toggleActiveStatus(p)}
-                                            style={{
-                                                padding: '4px 10px',
-                                                borderRadius: '20px',
-                                                border: 'none',
-                                                fontSize: '0.75rem',
-                                                fontWeight: 800,
-                                                cursor: 'pointer',
-                                                background: isActive ? '#dcfce7' : '#fee2e2',
-                                                color: isActive ? '#166534' : '#991b1b'
-                                            }}
-                                        >
-                                            {isActive ? '🟢 Active' : '🔴 Inactive'}
+                                        <button onClick={() => toggleActiveStatus(p)} style={{ padding: '4px 10px', borderRadius: '20px', border: 'none', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', background: isActive ? '#dcfce7' : '#fee2e2', color: isActive ? '#166534' : '#991b1b' }}>
+                                            {isActive ? ' Active' : ' Inactive'}
                                         </button>
                                     </div>
 
-                                    {/* Details */}
-                                    <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', border: '1px solid #f1f5f9' }}>
+                                    {/* Account details */}
+                                    <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '10px', marginBottom: '12px', border: '1px solid #f1f5f9' }}>
                                         <div style={{ fontSize: '0.85rem', color: '#334155', marginBottom: '4px' }}>
                                             <span style={{ color: '#64748b', fontWeight: 600 }}>Number/Phone:</span> <strong style={{ color: '#0c250d' }}>{accNo}</strong>
                                         </div>
@@ -1679,55 +1889,21 @@ const AdminDashboard = () => {
                                         )}
                                     </div>
 
-                                    {/* QR Code Thumbnail (non-cash only) */}
-                                    {p.qr_url && !((p.name || '').toLowerCase().includes('cash') || (p.name || '').toLowerCase().includes('cod')) && (
-                                        <div style={{ marginBottom: '14px', textAlign: 'center' }}>
-                                            <img
-                                                src={p.qr_url}
-                                                alt={`${p.name} QR Code`}
-                                                style={{ width: '90px', height: '90px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', padding: '4px' }}
-                                            />
+                                    {/* QR thumbnail */}
+                                    {p.qr_url && !isCashMethod(p.name) && (
+                                        <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+                                            <img src={p.qr_url} alt={`${p.name} QR`} style={{ width: '90px', height: '90px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', padding: '4px' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                                             <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '4px' }}>QR Code</div>
                                         </div>
                                     )}
                                 </div>
 
-                                {/* Bottom Action Buttons */}
-                                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
-                                    <button
-                                        onClick={() => openEditModal(p)}
-                                        style={{
-                                            flex: 1,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '6px',
-                                            padding: '8px',
-                                            borderRadius: '8px',
-                                            border: '1px solid #cbd5e1',
-                                            background: 'white',
-                                            color: '#0c250d',
-                                            fontWeight: 800,
-                                            fontSize: '0.82rem',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
+                                {/* Actions */}
+                                <div style={{ display: 'flex', gap: '8px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
+                                    <button onClick={() => openEditModal(p)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', color: '#0c250d', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>
                                         <Edit2 size={14} /> Edit
                                     </button>
-                                    <button
-                                        onClick={() => handleDeleteMethod(p.id, p.name)}
-                                        style={{
-                                            padding: '8px 12px',
-                                            borderRadius: '8px',
-                                            border: 'none',
-                                            background: '#fee2e2',
-                                            color: '#ef4444',
-                                            fontWeight: 800,
-                                            fontSize: '0.82rem',
-                                            cursor: 'pointer'
-                                        }}
-                                        title="Delete Method"
-                                    >
+                                    <button onClick={() => handleDeleteMethod(p.id, p.name)} style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fee2e2', color: '#ef4444', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }} title="Delete">
                                         <Trash2 size={14} />
                                     </button>
                                 </div>
@@ -1738,192 +1914,103 @@ const AdminDashboard = () => {
 
                 {/* ADD / EDIT MODAL */}
                 {isModalOpen && (
-                    <div style={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: 'rgba(0, 0, 0, 0.65)',
-                        backdropFilter: 'blur(4px)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        zIndex: 9999,
-                        padding: '20px'
-                    }}>
-                        <div style={{
-                            background: 'white',
-                            borderRadius: '24px',
-                            maxWidth: '480px',
-                            width: '100%',
-                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-                            overflow: 'hidden',
-                            animation: 'modalSlideIn 0.2s ease-out'
-                        }}>
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }} onClick={resetModal}>
+                        <div style={{ background: 'white', borderRadius: '24px', maxWidth: '500px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+
                             {/* Modal Header */}
-                            <div style={{
-                                background: 'linear-gradient(135deg, #091f0a 0%, #0d2b0e 100%)',
-                                color: 'white',
-                                padding: '20px 24px',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center'
-                            }}>
+                            <div style={{ background: 'linear-gradient(135deg, #091f0a 0%, #0d2b0e 100%)', color: 'white', padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                     <CreditCard color="#F9B700" size={22} />
-                                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: 'white' }}>
-                                        {editingMethod ? `Edit ${editingMethod.name}` : 'Add New Payment Method'}
+                                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900, color: 'white' }}>
+                                        {editingMethod ? `Edit: ${editingMethod.name}` : 'Add New Payment Method'}
                                     </h3>
                                 </div>
-                                <button
-                                    onClick={() => setIsModalOpen(false)}
-                                    style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}
-                                >
+                                <button onClick={resetModal} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}>
                                     <X size={18} />
                                 </button>
                             </div>
 
-                            {/* Modal Form */}
-                            <form onSubmit={handleSaveMethod} style={{ padding: '24px' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                    <div>
-                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
-                                            Payment Method Name *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. GCash, Maya, Bank Transfer, COD"
-                                            value={formData.name}
-                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                            required
-                                            style={inputStyle}
-                                        />
-                                    </div>
+                            {/* Scrollable form body */}
+                            <div style={{ overflowY: 'auto', flex: 1 }}>
+                                <form onSubmit={handleSaveMethod} id="payment-method-form">
+                                    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-                                    <div>
-                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
-                                            Account / Phone Number
-                                        </label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. 09947246294 or Account No."
-                                            value={formData.account_number}
-                                            onChange={(e) => setFormData({ ...formData, account_number: e.target.value })}
-                                            style={inputStyle}
-                                        />
-                                    </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>Payment Method Name *</label>
+                                            <input type="text" placeholder="e.g. GCash, Maya, Bank Transfer, COD" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required style={inputStyle} />
+                                        </div>
 
-                                    <div>
-                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
-                                            Account Name / Holder
-                                        </label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. Chilled And Frozen Hub"
-                                            value={formData.account_name}
-                                            onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
-                                            style={inputStyle}
-                                        />
-                                    </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>Account / Phone Number</label>
+                                            <input type="text" placeholder="e.g. 09947246294 or Account No." value={formData.account_number} onChange={(e) => setFormData({ ...formData, account_number: e.target.value })} style={inputStyle} />
+                                        </div>
 
-                                    <div>
-                                        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>
-                                            Instructions for Customer (Optional)
-                                        </label>
-                                        <textarea
-                                            placeholder="e.g. Please send screenshot of payment upon checkout."
-                                            value={formData.instructions}
-                                            onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
-                                            rows={3}
-                                            style={{ ...inputStyle, resize: 'vertical' }}
-                                        />
-                                    </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>Account Name / Holder</label>
+                                            <input type="text" placeholder="e.g. Chilled and Frozen Hub" value={formData.account_name} onChange={(e) => setFormData({ ...formData, account_name: e.target.value })} style={inputStyle} />
+                                        </div>
 
-                                    {/* QR Code Upload — hidden for Cash/COD methods */}
-                                    {!isCashMethod(formData.name) && (
-                                        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1.5px dashed #cbd5e1' }}>
-                                            <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '10px', color: '#334155' }}>
-                                                📱 QR Code Image
-                                            </label>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                                {/* Preview */}
-                                                <div style={{ width: '80px', height: '80px', borderRadius: '12px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #cbd5e1' }}>
-                                                    {formData.qr_url ? (
-                                                        <img src={formData.qr_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} alt="QR Preview" />
-                                                    ) : (
-                                                        <ImageIcon size={28} color="#94a3b8" />
-                                                    )}
-                                                </div>
-                                                {/* Upload controls */}
-                                                <div style={{ flex: 1 }}>
-                                                    <label style={{
-                                                        display: 'inline-flex', alignItems: 'center', gap: '7px',
-                                                        padding: '8px 16px', borderRadius: '10px',
-                                                        background: isUploadingQR ? '#e2e8f0' : '#0c250d',
-                                                        color: isUploadingQR ? '#64748b' : '#F9B700',
-                                                        fontWeight: 800, fontSize: '0.82rem', cursor: isUploadingQR ? 'not-allowed' : 'pointer',
-                                                        transition: 'all 0.2s'
-                                                    }}>
-                                                        <Camera size={15} />
-                                                        {isUploadingQR ? 'Uploading…' : 'Upload QR Code'}
-                                                        <input type="file" accept="image/*" onChange={handleQRUpload} disabled={isUploadingQR} style={{ display: 'none' }} />
-                                                    </label>
-                                                    {formData.qr_url && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setFormData(prev => ({ ...prev, qr_url: '' }))}
-                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginLeft: '8px', padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}
-                                                        >
-                                                            <X size={13} /> Remove
-                                                        </button>
-                                                    )}
-                                                    <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
-                                                        PNG or JPG. Shown to customers during checkout.
-                                                    </p>
+                                        <div>
+                                            <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px', color: '#334155' }}>Instructions for Customer (Optional)</label>
+                                            <textarea placeholder="e.g. Send screenshot of payment upon checkout." value={formData.instructions} onChange={(e) => setFormData({ ...formData, instructions: e.target.value })} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+                                        </div>
+
+                                        {/* QR Upload  hidden for Cash/COD */}
+                                        {!isCashMethod(formData.name) && (
+                                            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1.5px dashed #cbd5e1' }}>
+                                                <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', marginBottom: '10px', color: '#334155' }}> QR Code Image</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                                    {/* Preview box */}
+                                                    <div style={{ width: '80px', height: '80px', borderRadius: '12px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #cbd5e1' }}>
+                                                        {formData.qr_url ? (
+                                                            <img src={formData.qr_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} alt="QR Preview" onError={(e) => { e.currentTarget.style.display='none'; }} />
+                                                        ) : (
+                                                            <ImageIcon size={28} color="#94a3b8" />
+                                                        )}
+                                                    </div>
+                                                    <div style={{ flex: 1 }}>
+                                                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', background: isUploadingQR ? '#e2e8f0' : '#0c250d', color: isUploadingQR ? '#64748b' : '#F9B700', fontWeight: 800, fontSize: '0.82rem', cursor: isUploadingQR ? 'not-allowed' : 'pointer' }}>
+                                                            <Camera size={15} />
+                                                            {isUploadingQR ? 'Processing' : 'Upload QR Code'}
+                                                            <input type="file" accept="image/*" onChange={handleQRUpload} disabled={isUploadingQR} style={{ display: 'none' }} />
+                                                        </label>
+                                                        {formData.qr_url && !isUploadingQR && (
+                                                            <button type="button" onClick={() => { setFormData(prev => ({ ...prev, qr_url: '' })); setUploadStatus(''); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginLeft: '8px', padding: '8px 12px', borderRadius: '10px', border: 'none', background: '#fee2e2', color: '#ef4444', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
+                                                                <X size={13} /> Remove
+                                                            </button>
+                                                        )}
+                                                        {uploadStatus && (
+                                                            <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: uploadStatus.startsWith('') ? '#ef4444' : '#059669', fontWeight: 600 }}>{uploadStatus}</p>
+                                                        )}
+                                                        {!uploadStatus && (
+                                                            <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>PNG or JPG. Shown to customers during checkout.</p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
+                                        )}
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <input type="checkbox" id="is_active_chk" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} style={{ width: '18px', height: '18px', accentColor: '#0c250d', cursor: 'pointer' }} />
+                                            <label htmlFor="is_active_chk" style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0c250d', cursor: 'pointer' }}>Enable this payment method for checkout</label>
                                         </div>
-                                    )}
-
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
-                                        <input
-                                            type="checkbox"
-                                            id="is_active_chk"
-                                            checked={formData.is_active}
-                                            onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                                            style={{ width: '18px', height: '18px', accentColor: '#0c250d', cursor: 'pointer' }}
-                                        />
-                                        <label htmlFor="is_active_chk" style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0c250d', cursor: 'pointer' }}>
-                                            Enable this payment method for checkout
-                                        </label>
                                     </div>
-                                </div>
 
-                                {/* Modal Footer */}
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsModalOpen(false)}
-                                        style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: 'white', fontWeight: 700, cursor: 'pointer' }}
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: '#0c250d', color: '#F9B700', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                                    >
-                                        <Save size={16} /> Save Method
-                                    </button>
-                                </div>
-                            </form>
+                                    {/* Footer */}
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px 24px', borderTop: '1px solid #e2e8f0', background: 'white' }}>
+                                        <button type="button" onClick={resetModal} style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: 'white', fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Cancel</button>
+                                        <button type="submit" disabled={isUploadingQR} style={{ padding: '10px 22px', borderRadius: '10px', border: 'none', background: isUploadingQR ? '#94a3b8' : '#0c250d', color: '#F9B700', fontWeight: 900, cursor: isUploadingQR ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Outfit, sans-serif' }}>
+                                            <Save size={16} /> {isUploadingQR ? 'Wait' : 'Save Method'}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 )}
             </div>
         );
     };
-
     const StoreGeneralSettings = () => {
         const [banners, setBanners] = useState(() => {
             if (Array.isArray(storeSettings.banner_images) && storeSettings.banner_images.length > 0) {
@@ -1949,7 +2036,7 @@ const AdminDashboard = () => {
 
         const handleRemoveBanner = (index) => {
             if (banners.length <= 1) {
-                showMessage('⚠️ You should keep at least 1 hero banner image!');
+                showMessage(' You should keep at least 1 hero banner image!');
                 return;
             }
             const updated = banners.filter((_, i) => i !== index);
@@ -1975,7 +2062,7 @@ const AdminDashboard = () => {
                     reader.onloadend = () => {
                         setBanners(prev => [...prev, reader.result]);
                         setIsUploading(false);
-                        showMessage('🎉 Hero banner image uploaded!');
+                        showMessage(' Hero banner image uploaded!');
                     };
                     reader.readAsDataURL(file);
                     return;
@@ -1984,7 +2071,7 @@ const AdminDashboard = () => {
                 const { data } = supabase.storage.from('products').getPublicUrl(filePath);
                 if (data?.publicUrl) {
                     setBanners(prev => [...prev, data.publicUrl]);
-                    showMessage('🎉 Hero banner image uploaded to Supabase!');
+                    showMessage(' Hero banner image uploaded to Supabase!');
                 }
             } catch (err) {
                 console.error(err);
@@ -2029,7 +2116,7 @@ const AdminDashboard = () => {
                         .eq('id', storeSettings.id);
                     if (error) console.log('Supabase settings notice:', error.message);
                 } else {
-                    // No row yet — insert and capture the generated UUID
+                    // No row yet  insert and capture the generated UUID
                     const { data, error } = await supabase
                         .from('store_settings')
                         .insert([settingsObj])
@@ -2045,7 +2132,7 @@ const AdminDashboard = () => {
                 console.log('Supabase sync notice:', err);
             }
 
-            showMessage('🎉 Store general settings & Hero Slideshow updated successfully!');
+            showMessage(' Store general settings & Hero Slideshow updated successfully!');
         };
 
         return (
@@ -2053,7 +2140,7 @@ const AdminDashboard = () => {
                 {/* General Settings Form */}
                 <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                     <h2 style={{ margin: '0 0 24px', fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
-                        ⚙️ General Store Settings
+                         General Store Settings
                     </h2>
                     <form onSubmit={handleSave}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
@@ -2259,9 +2346,9 @@ const AdminDashboard = () => {
         );
     };
 
-    // ─────────────────────────────────────────────────────────────
+    // 
     // MAIN LAYOUT RENDER (LUXURY DARK GREEN & GOLD BRAND THEME)
-    // ─────────────────────────────────────────────────────────────
+    // 
     return (
         <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc', fontFamily: 'Outfit, sans-serif' }}>
             {/* Sidebar Navigation */}
@@ -2280,7 +2367,7 @@ const AdminDashboard = () => {
             }}>
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '36px', paddingLeft: '6px' }}>
-                        <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" style={{ height: '42px', width: '42px', borderRadius: '50%', border: '2px solid #F9B700', background: 'white', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
+                        <img src={storeSettings.logo_url || "/chilled-frozen-logo.png"} alt="Logo" style={{ height: '42px', width: '42px', borderRadius: '50%', border: '2px solid #F9B700', background: 'white', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = '/chilled-frozen-logo.png'; }} />
                         <div>
                             <div style={{ fontSize: '1.02rem', fontWeight: 900, color: '#F9B700', lineHeight: 1.1 }}>Chilled & Frozen</div>
                             <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Admin Portal</span>
@@ -2398,13 +2485,13 @@ const AdminDashboard = () => {
                 }}>
                     <div>
                         <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
-                            {activeTab === 'inventory' && '📦 Stock & Inventory Control Center'}
-                            {activeTab === 'menu' && '🍽️ Menu & Product Catalog Editor'}
-                            {activeTab === 'categories' && '🏷️ Store Categories'}
-                            {activeTab === 'orders' && '🛒 Customer Orders Manager'}
-                            {activeTab === 'orderTypes' && '🚚 Order & Fulfillment Methods'}
-                            {activeTab === 'payment' && '💳 Payment Methods'}
-                            {activeTab === 'settings' && '⚙️ Store General Settings'}
+                            {activeTab === 'inventory' && ' Stock & Inventory Control Center'}
+                            {activeTab === 'menu' && ' Menu & Product Catalog Editor'}
+                            {activeTab === 'categories' && ' Store Categories'}
+                            {activeTab === 'orders' && ' Customer Orders Manager'}
+                            {activeTab === 'orderTypes' && ' Order & Fulfillment Methods'}
+                            {activeTab === 'payment' && ' Payment Methods'}
+                            {activeTab === 'settings' && ' Store General Settings'}
                         </h1>
                     </div>
 
@@ -2413,7 +2500,7 @@ const AdminDashboard = () => {
                             padding: '6px 14px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 800,
                             background: '#dcfce7', color: '#166534'
                         }}>
-                            🟢 Store Active
+                             Store Active
                         </span>
                         <a href="/" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#0c250d', color: '#F9B700', textDecoration: 'none', padding: '8px 16px', borderRadius: '12px', fontSize: '0.82rem', fontWeight: 800 }}>
                             <span>View Live Store</span> <ExternalLink size={14} />

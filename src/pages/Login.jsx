@@ -42,9 +42,9 @@ const Login = () => {
                 <div style={{ position: 'absolute', inset: 0, opacity: 0.3, background: 'url("/hero.jpg") no-repeat center center/cover', mixBlendMode: 'overlay' }}></div>
                 <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', color: 'white', padding: '40px' }}>
                     <div style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', padding: '20px', borderRadius: '30px', display: 'inline-block', marginBottom: '30px', border: '1px solid rgba(255,255,255,0.3)' }}>
-                        <img src="/logo.png" alt="Chilled And Frozen Hub Logo" style={{ height: '110px', display: 'block' }} />
+                        <img src="/chilled-frozen-logo.png" alt="Chilled and Frozen Hub Logo" style={{ height: '110px', display: 'block' }} />
                     </div>
-                    <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', fontWeight: 900 }}>Chilled And Frozen Hub</h1>
+                    <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', fontWeight: 900 }}>Chilled and Frozen Hub</h1>
                     <p style={{ fontSize: '1.1rem', letterSpacing: '2px', textTransform: 'uppercase', opacity: 0.9, fontWeight: 700 }}>Trader • Supplier • Distributor</p>
                 </div>
             </div>
