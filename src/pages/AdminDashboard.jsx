@@ -965,13 +965,14 @@ const AdminDashboard = () => {
                                 <th style={{ padding: '12px' }}>Product</th>
                                 <th style={{ padding: '12px' }}>Category</th>
                                 <th style={{ padding: '12px' }}>Price / Unit</th>
+                                <th style={{ padding: '12px' }}>Variations & Add-ons</th>
                                 <th style={{ padding: '12px' }}>Min Order Tag</th>
                                 <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredItems.length === 0 ? (
-                                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No products found in catalog.</td></tr>
+                                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No products found in catalog.</td></tr>
                             ) : filteredItems.map(item => (
                                 <tr key={item.id} style={{ background: '#f8fafc' }}>
                                     <td style={{ padding: '12px 15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
@@ -997,6 +998,30 @@ const AdminDashboard = () => {
                                         ) : (
                                             <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>{item.price} /{item.unit || 'kg'}</span>
                                         )}
+                                    </td>
+                                    <td style={{ padding: '12px' }}>
+                                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                            {item.variations && item.variations.length > 0 && (
+                                                <span style={{ background: '#dbeafe', color: '#1e40af', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 600 }}>
+                                                    {item.variations.length} Variation{item.variations.length !== 1 ? 's' : ''}
+                                                </span>
+                                            )}
+                                            {item.flavors && item.flavors.length > 0 && (
+                                                <span style={{ background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 600 }}>
+                                                    {item.flavors.length} Flavor{item.flavors.length !== 1 ? 's' : ''}
+                                                </span>
+                                            )}
+                                            {item.addons && item.addons.length > 0 && (
+                                                <span style={{ background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '10px', fontSize: '0.7rem', fontWeight: 600 }}>
+                                                    {item.addons.length} Add-on{item.addons.length !== 1 ? 's' : ''}
+                                                </span>
+                                            )}
+                                            {(!item.variations || item.variations.length === 0) && 
+                                             (!item.flavors || item.flavors.length === 0) && 
+                                             (!item.addons || item.addons.length === 0) && (
+                                                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>None</span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td style={{ padding: '12px' }}>
                                         {item.min_order_note ? (
@@ -1078,6 +1103,195 @@ const AdminDashboard = () => {
                         <div>
                             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Minimum Order Note / Tag (Optional)</label>
                             <input name="minOrderNote" defaultValue={editingItem.min_order_note || editingItem.minOrderNote || ''} placeholder="e.g. Minimum 1 Slab, Wholesale min 1 box" style={inputStyle} />
+                        </div>
+
+                        {/* Variations Section */}
+                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: '#334155' }}>Product Variations (Size/Weight Options)</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setTempVariations([...tempVariations, { name: '', price: 0, disabled: false }])}
+                                    style={{ background: '#059669', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <Plus size={14} /> Add Variation
+                                </button>
+                            </div>
+                            {tempVariations.map((variation, index) => (
+                                <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. 1kg Box, 2kg Box"
+                                        value={variation.name}
+                                        onChange={(e) => {
+                                            const updated = [...tempVariations];
+                                            updated[index].name = e.target.value;
+                                            setTempVariations(updated);
+                                        }}
+                                        style={{ ...inputStyle, flex: 1, fontSize: '0.85rem' }}
+                                    />
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="Price"
+                                        value={variation.price}
+                                        onChange={(e) => {
+                                            const updated = [...tempVariations];
+                                            updated[index].price = Number(e.target.value);
+                                            setTempVariations(updated);
+                                        }}
+                                        style={{ ...inputStyle, width: '100px', fontSize: '0.85rem' }}
+                                    />
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={variation.disabled}
+                                            onChange={(e) => {
+                                                const updated = [...tempVariations];
+                                                updated[index].disabled = e.target.checked;
+                                                setTempVariations(updated);
+                                            }}
+                                        />
+                                        Disabled
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempVariations(tempVariations.filter((_, i) => i !== index))}
+                                        style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                            {tempVariations.length === 0 && (
+                                <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>
+                                    No variations added. Add variations for products with different sizes or weights.
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Flavors/Options Section */}
+                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: '#334155' }}>Product Flavors/Options</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setTempFlavors([...tempFlavors, { name: '', disabled: false }])}
+                                    style={{ background: '#059669', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <Plus size={14} /> Add Flavor
+                                </button>
+                            </div>
+                            {tempFlavors.map((flavor, index) => (
+                                <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Spicy, Mild, Original"
+                                        value={typeof flavor === 'string' ? flavor : flavor.name}
+                                        onChange={(e) => {
+                                            const updated = [...tempFlavors];
+                                            updated[index] = typeof flavor === 'string' 
+                                                ? e.target.value 
+                                                : { ...flavor, name: e.target.value };
+                                            setTempFlavors(updated);
+                                        }}
+                                        style={{ ...inputStyle, flex: 1, fontSize: '0.85rem' }}
+                                    />
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={typeof flavor === 'string' ? false : flavor.disabled}
+                                            onChange={(e) => {
+                                                const updated = [...tempFlavors];
+                                                if (typeof flavor === 'string') {
+                                                    updated[index] = { name: flavor, disabled: e.target.checked };
+                                                } else {
+                                                    updated[index] = { ...flavor, disabled: e.target.checked };
+                                                }
+                                                setTempFlavors(updated);
+                                            }}
+                                        />
+                                        Disabled
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempFlavors(tempFlavors.filter((_, i) => i !== index))}
+                                        style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                            {tempFlavors.length === 0 && (
+                                <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>
+                                    No flavors added. Add flavors or options for products with different varieties.
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Add-ons Section */}
+                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: '#334155' }}>Product Add-ons</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setTempAddons([...tempAddons, { name: '', price: 0, disabled: false }])}
+                                    style={{ background: '#059669', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <Plus size={14} /> Add Add-on
+                                </button>
+                            </div>
+                            {tempAddons.map((addon, index) => (
+                                <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Extra Sauce, Gift Wrap"
+                                        value={addon.name}
+                                        onChange={(e) => {
+                                            const updated = [...tempAddons];
+                                            updated[index].name = e.target.value;
+                                            setTempAddons(updated);
+                                        }}
+                                        style={{ ...inputStyle, flex: 1, fontSize: '0.85rem' }}
+                                    />
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="Price"
+                                        value={addon.price}
+                                        onChange={(e) => {
+                                            const updated = [...tempAddons];
+                                            updated[index].price = Number(e.target.value);
+                                            setTempAddons(updated);
+                                        }}
+                                        style={{ ...inputStyle, width: '100px', fontSize: '0.85rem' }}
+                                    />
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={addon.disabled}
+                                            onChange={(e) => {
+                                                const updated = [...tempAddons];
+                                                updated[index].disabled = e.target.checked;
+                                                setTempAddons(updated);
+                                            }}
+                                        />
+                                        Disabled
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempAddons(tempAddons.filter((_, i) => i !== index))}
+                                        style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                            {tempAddons.length === 0 && (
+                                <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>
+                                    No add-ons created. Add optional extras customers can purchase with this product.
+                                </p>
+                            )}
                         </div>
 
                         <div>
