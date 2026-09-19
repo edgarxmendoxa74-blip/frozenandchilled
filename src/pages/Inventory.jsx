@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, Search, FileSpreadsheet, Package, Store, ArrowLeft, X, Edit2, 
   Trash2, Layers, AlertTriangle, CheckCircle2, LayoutGrid, List, 
@@ -1256,13 +1256,46 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
     promo_price: '',
     unit: 'kg',
     min_order_note: '',
-    stock: 20,
+    stock: 0,
     low_stock_threshold: 5,
     out_of_stock: false,
     image: ''
   });
 
+  const [weightMode, setWeightMode] = useState('same'); // 'same' | 'catch'
+  const [boxQty, setBoxQty] = useState('');
+  const [weightPerBox, setWeightPerBox] = useState('');
+  const [catchBoxes, setCatchBoxes] = useState(['15.30']);
+  const [costPerKg, setCostPerKg] = useState('');
+  const [pricePerKg, setPricePerKg] = useState(item?.price ? String(item.price) : '');
   const [imagePreview, setImagePreview] = useState(item?.image || '');
+
+  // Auto calculate total weight
+  const totalCalculatedWeight = useMemo(() => {
+    if (weightMode === 'same') {
+      const q = parseFloat(boxQty) || 0;
+      const w = parseFloat(weightPerBox) || 0;
+      return (q * w).toFixed(2);
+    } else {
+      if (catchBoxes.length === 0) return '0';
+      const sum = catchBoxes.reduce((acc, curr) => acc + (parseFloat(curr) || 0), 0);
+      return sum.toFixed(2);
+    }
+  }, [weightMode, boxQty, weightPerBox, catchBoxes]);
+
+  // Keep formData.stock synced with calculated weight
+  useEffect(() => {
+    const wt = parseFloat(totalCalculatedWeight);
+    if (wt > 0) {
+      setFormData(prev => ({ ...prev, stock: wt }));
+    }
+  }, [totalCalculatedWeight]);
+
+  useEffect(() => {
+    if (pricePerKg !== '') {
+      setFormData(prev => ({ ...prev, price: pricePerKg }));
+    }
+  }, [pricePerKg]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -1276,93 +1309,95 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
     }
   };
 
-  const handleUnitSelect = (unitName) => {
-    setFormData(prev => ({ ...prev, unit: unitName }));
+  const handleAddCatchBox = () => {
+    setCatchBoxes(prev => [...prev, '15.00']);
+  };
+
+  const handleUpdateCatchBox = (index, val) => {
+    const updated = [...catchBoxes];
+    updated[index] = val;
+    setCatchBoxes(updated);
+  };
+
+  const handleRemoveCatchBox = (index) => {
+    setCatchBoxes(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.category_id || !formData.price) {
-      alert('Pakipunan ang obligadong fields: Product Name, Category, at Price');
+    if (!formData.name || !formData.category_id || (!formData.price && !pricePerKg)) {
+      alert('Pakipunan ang obligadong fields: Product Name, Category, at Price per kg');
       return;
     }
+
+    const finalStock = parseFloat(totalCalculatedWeight) > 0 
+      ? parseFloat(totalCalculatedWeight) 
+      : (parseFloat(formData.stock) || 0);
+
+    const finalPrice = pricePerKg !== '' ? parseFloat(pricePerKg) : parseFloat(formData.price || 0);
+
+    let batchNotes = formData.description || '';
+    if (costPerKg) {
+      batchNotes = batchNotes ? `${batchNotes} | Cost: ₱${costPerKg}/kg` : `Cost: ₱${costPerKg}/kg`;
+    }
+    if (weightMode === 'same' && boxQty && weightPerBox) {
+      batchNotes += ` | Boxes: ${boxQty} @ ${weightPerBox}kg`;
+    } else if (weightMode === 'catch' && catchBoxes.length > 0) {
+      batchNotes += ` | Catch Weight Boxes: ${catchBoxes.length} pcs (${catchBoxes.join(', ')} kg)`;
+    }
+
     onSave({
       ...formData,
-      price: parseFloat(formData.price),
+      price: finalPrice,
       promo_price: formData.promo_price ? parseFloat(formData.promo_price) : null,
-      stock: parseInt(formData.stock, 10) || 0,
+      stock: finalStock,
       low_stock_threshold: parseInt(formData.low_stock_threshold, 10) || 5,
-      out_of_stock: Boolean(formData.out_of_stock || parseInt(formData.stock, 10) === 0)
+      out_of_stock: Boolean(formData.out_of_stock || finalStock === 0),
+      description: batchNotes
     });
   };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-dialog-box" style={{ maxWidth: '680px' }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header-banner">
-          <h2>
-            <Package size={22} color="#F9B700" />
-            {item ? `Edit Product: ${item.name}` : 'Magdagdag ng Bagong Product Batch'}
-          </h2>
-          <button className="modal-close-btn" onClick={onClose}>
+      <div className="modal-dialog-box" style={{ maxWidth: '680px', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+        
+        {/* Header - Matching Image */}
+        <div style={{ background: '#f8fafc', padding: '24px 28px 18px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800, color: '#1e293b', fontFamily: 'Outfit, Georgia, serif', letterSpacing: '-0.02em' }}>
+              Pasok / Bagong Batch
+            </h2>
+            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.88rem' }}>
+              I-record ang bagong dating — supplier, storage, at timbang ng bawat box
+            </p>
+          </div>
+          <button 
+            type="button" 
+            onClick={onClose}
+            style={{ border: 'none', background: '#e2e8f0', color: '#475569', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease' }}
+          >
             <X size={18} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div className="modal-body-scroll">
+          <div className="modal-body-scroll" style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: '72vh', overflowY: 'auto' }}>
             
-            {/* Image Upload Box */}
-            <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '18px', border: '1.5px dashed #cbd5e1', marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', color: '#334155', marginBottom: '10px' }}>
-                📸 Product Image & Thumbnail
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                <div style={{ width: '85px', height: '85px', borderRadius: '14px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1.5px solid #cbd5e1' }}>
-                  {imagePreview ? (
-                    <img src={imagePreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Preview" onError={() => setImagePreview('')} />
-                  ) : (
-                    <Camera size={28} color="#94a3b8" />
-                  )}
-                </div>
-
-                <div style={{ flex: 1, minWidth: '220px' }}>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 18px', borderRadius: '10px', background: '#0c250d', color: '#F9B700', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer', marginBottom: '8px' }}>
-                    <Camera size={16} /> Choose Image File
-                    <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
-                  </label>
-
-                  <input 
-                    type="url"
-                    className="form-input-styled"
-                    style={{ fontSize: '0.82rem', padding: '8px 12px' }}
-                    value={formData.image || ''}
-                    onChange={(e) => {
-                      setFormData({ ...formData, image: e.target.value });
-                      setImagePreview(e.target.value);
-                    }}
-                    placeholder="or paste Image URL (https://...)"
-                  />
-                </div>
+            {/* Product Name & Category Selector */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div className="form-group-item" style={{ margin: 0 }}>
+                <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Product Name *</label>
+                <input 
+                  type="text"
+                  className="form-input-styled"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., High-End Beef Shortloin"
+                  required
+                />
               </div>
-            </div>
-
-            {/* Basic Info */}
-            <div className="form-group-item">
-              <label>Product Name *</label>
-              <input 
-                type="text"
-                className="form-input-styled"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., High-End Beef Shortloin St. Helens"
-                required
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div className="form-group-item">
-                <label>Category *</label>
+              <div className="form-group-item" style={{ margin: 0 }}>
+                <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Category *</label>
                 <select 
                   className="form-input-styled"
                   value={formData.category_id}
@@ -1375,41 +1410,179 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div className="form-group-item">
-                <label>Unit of Measure *</label>
-                <input 
-                  type="text"
-                  className="form-input-styled"
-                  value={formData.unit || 'kg'}
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  placeholder="kg, slab, box, sack, pack"
-                  required
-                />
-                <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-                  {['kg', 'slab', 'box', 'sack', 'pack', 'pc'].map(u => (
-                    <button
-                      key={u}
-                      type="button"
-                      onClick={() => handleUnitSelect(u)}
-                      style={{
-                        padding: '2px 8px', borderRadius: '6px', border: '1px solid #cbd5e1',
-                        background: formData.unit === u ? '#0c250d' : 'white',
-                        color: formData.unit === u ? '#F9B700' : '#475569',
-                        fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer'
-                      }}
-                    >
-                      {u}
-                    </button>
-                  ))}
+            {/* BOX WEIGHT CARD SECTION - EXACT MATCH TO USER IMAGE */}
+            <div style={{ background: '#f4f6f8', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '1rem', color: '#1e293b', marginBottom: '14px', fontFamily: 'Outfit, Georgia, serif' }}>
+                <span>📦</span>
+                <span>Timbang ng mga box</span>
+              </div>
+
+              {/* Mode Segmented Tab Switcher */}
+              <div style={{ background: '#e2e8f0', padding: '4px', borderRadius: '12px', display: 'inline-flex', gap: '4px', marginBottom: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => setWeightMode('same')}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: weightMode === 'same' ? 'white' : 'transparent',
+                    color: weightMode === 'same' ? '#1e293b' : '#64748b',
+                    fontWeight: weightMode === 'same' ? 800 : 600,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    boxShadow: weightMode === 'same' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  Pareho ang timbang
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeightMode('catch')}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: weightMode === 'catch' ? 'white' : 'transparent',
+                    color: weightMode === 'catch' ? '#1e293b' : '#64748b',
+                    fontWeight: weightMode === 'catch' ? 800 : 600,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    boxShadow: weightMode === 'catch' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  Iba-iba (catch weight)
+                </button>
+              </div>
+
+              {/* Mode: Pareho ang timbang */}
+              {weightMode === 'same' ? (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Quantity of boxes</label>
+                      <input 
+                        type="number"
+                        className="form-input-styled"
+                        value={boxQty}
+                        onChange={(e) => setBoxQty(e.target.value)}
+                        placeholder="hal. 20"
+                        style={{ background: 'white' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Weight per box (kg)</label>
+                      <input 
+                        type="number"
+                        step="0.01"
+                        className="form-input-styled"
+                        value={weightPerBox}
+                        onChange={(e) => setWeightPerBox(e.target.value)}
+                        placeholder="hal. 15.30"
+                        style={{ background: 'white' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '6px' }}>
+                    {(!boxQty && !weightPerBox) ? (
+                      "Wala pang box. Gamitin ang mga field sa taas."
+                    ) : (
+                      `Nakalkula: ${boxQty || 0} box × ${weightPerBox || 0} kg = ${totalCalculatedWeight} kg`
+                    )}
+                  </div>
                 </div>
+              ) : (
+                /* Mode: Iba-iba (catch weight) */
+                <div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {catchBoxes.map((w, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#475569', minWidth: '60px' }}>Box #{idx + 1}:</span>
+                        <input 
+                          type="number"
+                          step="0.01"
+                          className="form-input-styled"
+                          value={w}
+                          onChange={(e) => handleUpdateCatchBox(idx, e.target.value)}
+                          placeholder="hal. 15.30"
+                          style={{ background: 'white', flex: 1 }}
+                        />
+                        <span style={{ fontSize: '0.82rem', color: '#64748b' }}>kg</span>
+                        {catchBoxes.length > 1 && (
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveCatchBox(idx)}
+                            style={{ border: 'none', background: '#fee2e2', color: '#ef4444', borderRadius: '8px', width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={handleAddCatchBox}
+                    style={{ border: '1px dashed #cbd5e1', background: 'white', color: '#0c250d', borderRadius: '10px', padding: '6px 14px', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Plus size={14} /> Magdagdag ng Box
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* KABUUANG TIMBANG (AUTO) - EXACT MATCH TO IMAGE */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                Kabuuang timbang (auto)
+              </label>
+              <div style={{ background: '#dce4dd', border: '1px solid #bdc9be', borderRadius: '12px', padding: '12px 18px', fontSize: '1.15rem', fontWeight: 800, color: '#163618' }}>
+                {totalCalculatedWeight || 0}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px' }}>
+                Sum ng lahat ng box. Awtomatikong pumapasok sa inventory pagka-save.
               </div>
             </div>
 
-            {/* Supplier Picker */}
+            {/* PRICING GRID - COST & PRICE PER KG */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Cost per kg (puhunan)
+                </label>
+                <input 
+                  type="number"
+                  step="0.01"
+                  className="form-input-styled"
+                  value={costPerKg}
+                  onChange={(e) => setCostPerKg(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Price per kg (benta)
+                </label>
+                <input 
+                  type="number"
+                  step="0.01"
+                  className="form-input-styled"
+                  value={pricePerKg}
+                  onChange={(e) => setPricePerKg(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            {/* SUPPLIER & ADDITIONAL INFO */}
             {suppliers.length > 0 && (
-              <div className="form-group-item">
-                <label>Select Supplier / Vendor</label>
+              <div className="form-group-item" style={{ margin: 0 }}>
+                <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Supplier / Vendor</label>
                 <select 
                   className="form-input-styled"
                   value={suppliers.find(s => formData.description?.includes(s.name))?.name || ''}
@@ -1423,7 +1596,7 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
                     }
                   }}
                 >
-                  <option value="">Pumili mula sa registered suppliers list...</option>
+                  <option value="">Pumili mula sa registered suppliers...</option>
                   {suppliers.map(s => (
                     <option key={s.id} value={s.name}>{s.name} ({s.contact_person || 'Vendor'})</option>
                   ))}
@@ -1431,121 +1604,100 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
               </div>
             )}
 
-            {/* Pricing Section */}
-            <div style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', padding: '18px 20px', borderRadius: '16px', border: '1px solid #bbf7d0', marginBottom: '18px' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#166534', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                💰 Pricing Information
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', color: '#334155', marginBottom: '6px' }}>Regular Price (₱) *</label>
-                  <input 
-                    type="number"
-                    className="form-input-styled"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    placeholder="0.00"
-                    step="0.01"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', color: '#334155', marginBottom: '6px' }}>Promo / Sale Price (₱)</label>
-                  <input 
-                    type="number"
-                    className="form-input-styled"
-                    value={formData.promo_price || ''}
-                    onChange={(e) => setFormData({ ...formData, promo_price: e.target.value })}
-                    placeholder="Optional promo price"
-                    step="0.01"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Stock & Threshold */}
-            <div style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', padding: '18px 20px', borderRadius: '16px', border: '1px solid #93c5fd', marginBottom: '18px' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#1e40af', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                📦 Warehouse Stock & Alert Threshold
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', color: '#334155', marginBottom: '6px' }}>Initial Stock Qty *</label>
-                  <input 
-                    type="number"
-                    className="form-input-styled"
-                    value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
-                    placeholder="0"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontWeight: 800, fontSize: '0.82rem', color: '#334155', marginBottom: '6px' }}>Low Stock Alert ()</label>
-                  <input 
-                    type="number"
-                    className="form-input-styled"
-                    value={formData.low_stock_threshold}
-                    onChange={(e) => setFormData({ ...formData, low_stock_threshold: e.target.value })}
-                    placeholder="5"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', padding: '8px 12px', background: 'white', borderRadius: '10px' }}>
+            {/* Image & Threshold */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Unit of Measure</label>
                 <input 
-                  type="checkbox"
-                  id="chk_out_of_stock"
-                  checked={Boolean(formData.out_of_stock)}
-                  onChange={(e) => setFormData({ ...formData, out_of_stock: e.target.checked })}
-                  style={{ width: '18px', height: '18px', accentColor: '#dc2626', cursor: 'pointer' }}
+                  type="text" 
+                  className="form-input-styled" 
+                  value={formData.unit || 'kg'} 
+                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })} 
                 />
-                <label htmlFor="chk_out_of_stock" style={{ fontWeight: 800, fontSize: '0.85rem', color: '#991b1b', cursor: 'pointer' }}>
-                  Mark product as Out of Stock (I-tago muna sa storefront)
-                </label>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Low Stock Alert Threshold</label>
+                <input 
+                  type="number" 
+                  className="form-input-styled" 
+                  value={formData.low_stock_threshold} 
+                  onChange={(e) => setFormData({ ...formData, low_stock_threshold: e.target.value })} 
+                />
               </div>
             </div>
 
-            {/* Min Order Note & Supplier Info */}
-            <div className="form-group-item">
-              <label>Minimum Order Note / Tag (Optional)</label>
-              <input 
-                type="text"
-                className="form-input-styled"
-                value={formData.min_order_note || ''}
-                onChange={(e) => setFormData({ ...formData, min_order_note: e.target.value })}
-                placeholder="e.g., Minimum 1 Slab, Wholesale min 1 box"
-              />
+            {/* Image Upload Box */}
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '16px', border: '1.5px dashed #cbd5e1' }}>
+              <label style={{ display: 'block', fontWeight: 800, fontSize: '0.84rem', color: '#334155', marginBottom: '8px' }}>
+                📸 Product Image (Optional)
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                <div style={{ width: '60px', height: '60px', borderRadius: '12px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #cbd5e1' }}>
+                  {imagePreview ? (
+                    <img src={imagePreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Preview" onError={() => setImagePreview('')} />
+                  ) : (
+                    <Camera size={22} color="#94a3b8" />
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '8px', background: '#0c250d', color: '#F9B700', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', marginBottom: '6px' }}>
+                    <Camera size={14} /> Choose Image File
+                    <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
+                  </label>
+
+                  <input 
+                    type="url"
+                    className="form-input-styled"
+                    style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                    value={formData.image || ''}
+                    onChange={(e) => {
+                      setFormData({ ...formData, image: e.target.value });
+                      setImagePreview(e.target.value);
+                    }}
+                    placeholder="or paste Image URL (https://...)"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="form-group-item">
-              <label>Description / Supplier Reference</label>
-              <textarea 
-                className="form-input-styled"
-                style={{ resize: 'vertical', minHeight: '70px' }}
-                value={formData.description || ''}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Short product details, brand, supplier name, etc."
-              />
-            </div>
           </div>
 
-          <div className="modal-footer-bar">
+          {/* FOOTER ACTIONS - EXACT MATCH TO IMAGE */}
+          <div style={{ padding: '16px 28px', borderTop: '1px solid #e2e8f0', background: 'white', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
             <button 
-              type="button" 
-              className="btn-tool"
+              type="button"
               onClick={onClose}
+              style={{
+                border: 'none',
+                background: '#e2e8f0',
+                color: '#334155',
+                padding: '10px 22px',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                cursor: 'pointer'
+              }}
             >
               Cancel
             </button>
             <button 
               type="submit"
-              className="btn-new-batch"
+              style={{
+                border: 'none',
+                background: '#166534',
+                color: 'white',
+                padding: '10px 24px',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
             >
-              <Save size={16} /> {item ? 'Save Product Changes' : 'Create Product Batch'}
+              I-record ang pasok
             </button>
           </div>
         </form>
