@@ -19,7 +19,8 @@ import {
     CreditCard,
     Banknote,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    Truck
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { categories as initialCategories, menuItems } from '../data/MenuData';
@@ -85,7 +86,7 @@ const Home = () => {
     const [orderTypes, setOrderTypes] = useState([
         { id: 'pickup', name: 'Pickup' },
         { id: 'delivery', name: 'Delivery' },
-        { id: 'lalamove-delivery', name: 'Lalamove Delivery' }
+        { id: 'lalamove-delivery', name: 'Manual Lalamove Delivery Booking' }
     ]);
     const [storeSettings, setStoreSettings] = useState({
         manual_status: 'auto',
@@ -452,7 +453,7 @@ const Home = () => {
 
         if (orderType === 'pickup') customerInfoStr += `\nPhone: ${customerDetails.phone}\nPickup Time: ${customerDetails.pickup_time}`;
         if (orderType === 'delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nDelivery Location: ${customerDetails.delivery_location}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}`;
-        if (orderType === 'lalamove delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
+        if (orderType.includes('lalamove')) customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}${customerDetails.landmark ? `\nLandmark: ${customerDetails.landmark}` : ''}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
 
         let totalBreakdown = `Subtotal: ₱${cartSubtotal}`;
         if (orderType === 'delivery' && deliveryCharge > 0) {
@@ -528,7 +529,7 @@ const Home = () => {
 
         if (orderType === 'pickup' && (!name || !phone || !pickup_time)) { alert('Please provide Name, Phone Number, and Pickup Time.'); return; }
         if (orderType === 'delivery' && (!name || !phone || !delivery_location || !address)) { alert('Please provide Name, Phone Number, Delivery Location, and Address.'); return; }
-        if (orderType === 'lalamove delivery' && (!name || !phone || !address)) { alert('Please provide Name, Phone Number, and Complete Address for Lalamove Delivery.'); return; }
+        if (orderType.includes('lalamove') && (!name || !phone || !address)) { alert('Please provide Name, Phone Number, and Complete Address for Manual Lalamove Delivery Booking.'); return; }
 
         if (!paymentMethod) { alert('Please select a payment method.'); return; }
 
@@ -570,7 +571,7 @@ const Home = () => {
 
         if (orderType === 'pickup') customerInfoStr += `\nPhone: ${customerDetails.phone}\nPickup Time: ${customerDetails.pickup_time}`;
         if (orderType === 'delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nDelivery Location: ${customerDetails.delivery_location}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}`;
-        if (orderType === 'lalamove delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
+        if (orderType.includes('lalamove')) customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}${customerDetails.landmark ? `\nLandmark: ${customerDetails.landmark}` : ''}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
 
         let amountBreakdown = `Subtotal: ₱${cartSubtotal}`;
         if (orderType === 'delivery' && deliveryCharge > 0) {
@@ -1224,10 +1225,39 @@ Thank you!`;
                             {/* Order Type & Form here (omitted for brevity, assume exists as before) */}
                             <div style={{ marginBottom: '30px' }}>
                                 <label style={{ fontWeight: 700, fontSize: '1rem', display: 'block', marginBottom: '15px' }}>Select Order Type</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '10px' }}>
-                                    {orderTypes.map(type => (
-                                        <button key={type.id} onClick={() => setOrderType(type.name.toLowerCase())} style={{ padding: '8px', fontSize: '0.9rem', borderRadius: '12px', border: '1px solid var(--primary)', background: orderType === type.name.toLowerCase() ? 'var(--primary)' : 'white', color: orderType === type.name.toLowerCase() ? 'white' : 'var(--primary)', fontWeight: 700, cursor: 'pointer' }}>{type.name}</button>
-                                    ))}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
+                                    {orderTypes.map(type => {
+                                        const typeKey = type.name.toLowerCase();
+                                        const isSelected = orderType.toLowerCase() === typeKey || orderType.toLowerCase() === (type.id || '').toLowerCase() || (typeKey.includes('lalamove') && orderType.toLowerCase().includes('lalamove'));
+                                        return (
+                                            <button
+                                                key={type.id || type.name}
+                                                type="button"
+                                                onClick={() => setOrderType(typeKey)}
+                                                style={{
+                                                    padding: '12px 10px',
+                                                    fontSize: '0.86rem',
+                                                    borderRadius: '12px',
+                                                    border: isSelected ? '2px solid var(--primary)' : '1px solid #cbd5e1',
+                                                    background: isSelected ? 'var(--primary)' : '#f8fafc',
+                                                    color: isSelected ? 'white' : '#1e293b',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '6px',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: isSelected ? '0 4px 12px rgba(12, 37, 13, 0.2)' : 'none'
+                                                }}
+                                            >
+                                                {typeKey.includes('pickup') && <ShoppingBag size={16} />}
+                                                {typeKey.includes('lalamove') && <Truck size={16} />}
+                                                {typeKey.includes('delivery') && !typeKey.includes('lalamove') && <Truck size={16} />}
+                                                {type.name}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
 
@@ -1292,11 +1322,22 @@ Thank you!`;
                                                 </div>
                                             </>
                                         )}
-                                        {!['pickup', 'delivery', 'lalamove delivery'].includes(orderType) && <div><label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>Notes / Instructions</label><textarea value={customerDetails.landmark} onChange={(e) => setCustomerDetails({ ...customerDetails, landmark: e.target.value })} placeholder="Any specific requests..." style={{ padding: '12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} /></div>}
-                                        {orderType === 'lalamove delivery' && (
+                                        {!['pickup', 'delivery'].includes(orderType) && !orderType.includes('lalamove') && <div><label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>Notes / Instructions</label><textarea value={customerDetails.landmark} onChange={(e) => setCustomerDetails({ ...customerDetails, landmark: e.target.value })} placeholder="Any specific requests..." style={{ padding: '12px', width: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} /></div>}
+                                        {(orderType === 'lalamove delivery' || orderType.includes('lalamove')) && (
                                             <>
-                                                <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '10px', border: '1px solid #f59e0b', fontSize: '0.85rem', color: '#92400e' }}>
-                                                    🛵 <strong>Lalamove Delivery</strong> — Please arrange your own Lalamove booking. Provide your complete pick-up address when booking. Delivery fee is paid directly to Lalamove.
+                                                <div style={{ padding: '16px', background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', borderRadius: '14px', border: '1.5px solid #fde68a', fontSize: '0.88rem', color: '#92400e', boxShadow: '0 2px 10px rgba(245, 158, 11, 0.08)' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '0.95rem', color: '#b45309', marginBottom: '6px' }}>
+                                                        <Truck size={18} />
+                                                        <span>Manual Lalamove Delivery Booking</span>
+                                                    </div>
+                                                    <div style={{ lineHeight: '1.5', fontSize: '0.84rem' }}>
+                                                        <strong style={{ color: '#78350f' }}>Paalala sa Pag-book:</strong>
+                                                        <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
+                                                            <li>Kukumpirmahin muna ng store ang iyong order sa Messenger bago mag-book.</li>
+                                                            <li>Pagkatapos mag-confirm, kayo o ang store ang mag-aayos ng Lalamove rider booking.</li>
+                                                            <li>Ang Lalamove delivery fee ay direktang babayaran sa rider upon delivery.</li>
+                                                        </ul>
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '5px', fontWeight: 600 }}>
