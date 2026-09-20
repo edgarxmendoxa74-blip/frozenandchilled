@@ -1409,9 +1409,18 @@ Thank you!`;
                                 })()}
                             </div>
 
-                            {/* Order Type & Form here (omitted for brevity, assume exists as before) */}
-                            <div style={{ marginBottom: '30px' }}>
-                                <label style={{ fontWeight: 700, fontSize: '1rem', display: 'block', marginBottom: '15px' }}>Select Order Type</label>
+                            {/* Order Type & Form here */}
+                            <div style={{ marginBottom: '25px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                    <label style={{ fontWeight: 800, fontSize: '1.02rem', display: 'flex', alignItems: 'center', gap: '4px', color: '#0f172a' }}>
+                                        Select Order Type <span style={{ color: '#dc2626', fontWeight: 900 }}>*</span>
+                                    </label>
+                                    {!orderType && (
+                                        <span style={{ fontSize: '0.75rem', background: '#fee2e2', color: '#b91c1c', fontWeight: 800, padding: '3px 8px', borderRadius: '12px' }}>
+                                            Required
+                                        </span>
+                                    )}
+                                </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
                                     {orderTypes.map(type => {
                                         const typeKey = type.name.toLowerCase();
