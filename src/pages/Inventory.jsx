@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { categories as initialCategories, menuItems as initialItems } from '../data/MenuData';
 import './Inventory.css';
 
 const DEFAULT_SUPPLIERS = [
@@ -74,30 +75,57 @@ const Inventory = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const { data: itemsData, error: itemsError } = await supabase
+      const { data: itemsData } = await supabase
         .from('menu_items')
         .select('*')
         .order('name');
       
-      if (itemsError) throw itemsError;
-
-      const { data: categoriesData, error: categoriesError } = await supabase
+      const { data: categoriesData } = await supabase
         .from('categories')
         .select('*')
         .order('sort_order');
-      
-      if (categoriesError) throw categoriesError;
 
-      const fetchedItems = itemsData || [];
+      const savedRaw = localStorage.getItem('menuItems');
+      let savedItems = [];
+      if (savedRaw) {
+        try { savedItems = JSON.parse(savedRaw); } catch (e) {}
+      }
+
+      // Merge Supabase items, LocalStorage items, and default MenuData catalog items
+      const combinedItemsMap = new Map();
+
+      // 1. Base catalog items from MenuData
+      initialItems.forEach(i => {
+        const key = (i.name || '').toLowerCase().trim();
+        combinedItemsMap.set(key, i);
+      });
+
+      // 2. Saved items from LocalStorage
+      savedItems.forEach(i => {
+        const key = (i.name || '').toLowerCase().trim();
+        const existing = combinedItemsMap.get(key);
+        combinedItemsMap.set(key, existing ? { ...existing, ...i } : i);
+      });
+
+      // 3. Supabase fetched items
+      if (itemsData && itemsData.length > 0) {
+        itemsData.forEach(i => {
+          const key = (i.name || '').toLowerCase().trim();
+          const existing = combinedItemsMap.get(key);
+          combinedItemsMap.set(key, existing ? { ...existing, ...i } : i);
+        });
+      }
+
+      const fetchedItems = Array.from(combinedItemsMap.values());
       setAllItems(fetchedItems);
-      setCategories(categoriesData || []);
+      setCategories(categoriesData && categoriesData.length > 0 ? categoriesData : initialCategories);
       
       // Initialize local stock state
       const initialStock = {};
       fetchedItems.forEach(i => {
         initialStock[i.id] = {
           stock: i.stock ?? 0,
-          low_stock_threshold: i.low_stock_threshold || 5,
+          low_stock_threshold: i.low_stock_threshold || i.lowStockThreshold || 5,
           unit: i.unit || 'kg'
         };
       });
@@ -107,19 +135,17 @@ const Inventory = () => {
     } catch (err) {
       console.error('Error fetching inventory data:', err);
       const saved = localStorage.getItem('menuItems');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setAllItems(parsed);
-        const initialStock = {};
-        parsed.forEach(i => {
-          initialStock[i.id] = {
-            stock: i.stock ?? 0,
-            low_stock_threshold: i.low_stock_threshold || 5,
-            unit: i.unit || 'kg'
-          };
-        });
-        setLocalStockState(initialStock);
-      }
+      const parsed = saved ? JSON.parse(saved) : initialItems;
+      setAllItems(parsed);
+      const initialStock = {};
+      parsed.forEach(i => {
+        initialStock[i.id] = {
+          stock: i.stock ?? 0,
+          low_stock_threshold: i.low_stock_threshold || i.lowStockThreshold || 5,
+          unit: i.unit || 'kg'
+        };
+      });
+      setLocalStockState(initialStock);
     } finally {
       setIsLoading(false);
     }
