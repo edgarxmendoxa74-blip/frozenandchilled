@@ -187,12 +187,14 @@ const Inventory = () => {
       const updated = allItems.map(i => i.id === item.id ? { ...i, stock: updatedQty, out_of_stock: isOut } : i);
       setAllItems(updated);
       localStorage.setItem('menuItems', JSON.stringify(updated));
+      window.dispatchEvent(new Event('store_data_updated'));
       showMessage(`✓ Stock updated for "${item.name}" (${updatedQty} ${item.unit || 'kg'})`);
     } catch (err) {
       console.error('Error saving stock:', err);
       const updated = allItems.map(i => i.id === item.id ? { ...i, stock: updatedQty, out_of_stock: isOut } : i);
       setAllItems(updated);
       localStorage.setItem('menuItems', JSON.stringify(updated));
+      window.dispatchEvent(new Event('store_data_updated'));
       showMessage(`✓ Stock saved locally for "${item.name}"`);
     }
   };
@@ -394,6 +396,7 @@ const Inventory = () => {
       }));
       
       localStorage.setItem('menuItems', JSON.stringify(allItems));
+      window.dispatchEvent(new Event('store_data_updated'));
       setShowNewBatchModal(false);
       setShowEditModal(false);
       setEditingItem(null);
@@ -405,6 +408,7 @@ const Inventory = () => {
         : [fallbackItem, ...allItems];
       setAllItems(updated);
       localStorage.setItem('menuItems', JSON.stringify(updated));
+      window.dispatchEvent(new Event('store_data_updated'));
       setShowNewBatchModal(false);
       setShowEditModal(false);
       setEditingItem(null);
@@ -1604,7 +1608,7 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
               </div>
             )}
 
-            {/* Image & Threshold */}
+            {/* Unit & Threshold */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Unit of Measure</label>
@@ -1623,41 +1627,6 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
                   value={formData.low_stock_threshold} 
                   onChange={(e) => setFormData({ ...formData, low_stock_threshold: e.target.value })} 
                 />
-              </div>
-            </div>
-
-            {/* Image Upload Box */}
-            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '16px', border: '1.5px dashed #cbd5e1' }}>
-              <label style={{ display: 'block', fontWeight: 800, fontSize: '0.84rem', color: '#334155', marginBottom: '8px' }}>
-                📸 Product Image (Optional)
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                <div style={{ width: '60px', height: '60px', borderRadius: '12px', background: '#e2e8f0', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #cbd5e1' }}>
-                  {imagePreview ? (
-                    <img src={imagePreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Preview" onError={() => setImagePreview('')} />
-                  ) : (
-                    <Camera size={22} color="#94a3b8" />
-                  )}
-                </div>
-
-                <div style={{ flex: 1, minWidth: '200px' }}>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '8px', background: '#0c250d', color: '#F9B700', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer', marginBottom: '6px' }}>
-                    <Camera size={14} /> Choose Image File
-                    <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
-                  </label>
-
-                  <input 
-                    type="url"
-                    className="form-input-styled"
-                    style={{ fontSize: '0.8rem', padding: '6px 10px' }}
-                    value={formData.image || ''}
-                    onChange={(e) => {
-                      setFormData({ ...formData, image: e.target.value });
-                      setImagePreview(e.target.value);
-                    }}
-                    placeholder="or paste Image URL (https://...)"
-                  />
-                </div>
               </div>
             </div>
 

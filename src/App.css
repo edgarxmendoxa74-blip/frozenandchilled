@@ -272,70 +272,149 @@ body {
   white-space: nowrap;
 }
 
-/* Grid */
+/* Grid - Compact Layout */
 .menu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 10px;
 }
 
-/* ── Menu Item Card ───────────────────────────────────────── */
-.menu-item-card {
+/* ── Menu Item Horizontal List Card Format ───────────────── */
+.menu-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu-item-list-card {
   background: var(--card-bg);
   border-radius: 16px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-  border: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-}
-.menu-item-card:hover {
-  transform: translateY(-5px);
-  box-shadow: var(--shadow-lg);
-}
-
-.menu-item-image {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-}
-
-.menu-item-info {
-  padding: 10px 10px 12px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.menu-item-name {
-  font-family: 'Outfit', sans-serif;
-  font-size: 0.85rem;
-  font-weight: 800;
-  margin-bottom: 3px;
-  color: var(--primary-dark);
-  line-height: 1.25;
-}
-
-.menu-item-desc {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-  line-height: 1.35;
-  flex: 1;
-}
-
-.menu-item-footer {
+  border: 1.5px solid var(--border);
+  padding: 14px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+}
+.menu-item-list-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(30,139,0,0.14);
+  border-color: rgba(30,139,0,0.35);
 }
 
-.menu-item-price {
+.menu-item-list-img-wrapper {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid #cbd5e1;
+}
+
+.menu-item-list-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.menu-item-list-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+}
+
+.menu-item-list-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.menu-item-list-name {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.05rem;
   font-weight: 800;
+  color: var(--primary-dark);
+  line-height: 1.25;
+  margin: 0;
+}
+
+.menu-item-list-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.menu-item-list-stock {
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.menu-item-list-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+  min-width: 125px;
+}
+
+.menu-item-list-price {
+  font-size: 1.15rem;
+  font-weight: 900;
   color: var(--primary);
-  font-size: 1rem;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.btn-add-order {
+  padding: 8px 16px !important;
+  font-size: 0.8rem !important;
+  border-radius: 10px !important;
+  font-weight: 800 !important;
+  width: auto !important;
+  min-width: 120px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  box-shadow: 0 4px 12px rgba(30,139,0,0.2) !important;
+}
+
+@media (max-width: 640px) {
+  .menu-item-list-card {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+  .menu-item-list-right {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px dashed var(--border);
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+  .menu-item-list-price {
+    text-align: left;
+  }
 }
 
 /* ── Buttons ──────────────────────────────────────────────── */

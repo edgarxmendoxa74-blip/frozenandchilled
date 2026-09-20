@@ -212,11 +212,16 @@ export const menuItems = [
         name: 'Beef Trimmings Mondelli',
         description: 'Mondelli Beef Trimmings. Minimum 1 Box.',
         price: 335,
-        stock: 30,
+        stock: 85.252,
         lowStockThreshold: 8,
         unit: 'kg',
         image: 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?auto=format&fit=crop&w=400&q=80',
-        minOrderNote: 'Wholesale min 1 box'
+        minOrderNote: 'Wholesale min 1 box',
+        boxes: [
+            { id: 'box-1', name: 'Box 1', weight: 28.150, disabled: false },
+            { id: 'box-2', name: 'Box 2', weight: 27.800, disabled: false },
+            { id: 'box-3', name: 'Box 3', weight: 29.302, disabled: false }
+        ]
     },
     {
         id: 18,

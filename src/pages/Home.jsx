@@ -338,10 +338,63 @@ const Home = () => {
     // Selection state for products with options
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [selectionOptions, setSelectionOptions] = useState({
+        box: null,
         variation: null,
         flavors: [],
         addons: []
     });
+
+    // Helper: Get available box/weight stocks for any menu item connected to live inventory
+    const getItemBoxes = (item) => {
+        if (!item) return [];
+        const totalStock = parseFloat(item.stock) || 0;
+        const isOutOfStock = Boolean(item.out_of_stock || totalStock <= 0);
+
+        if (Array.isArray(item.boxes) && item.boxes.length > 0) {
+            return item.boxes.map((b, idx) => ({
+                ...b,
+                disabled: isOutOfStock || b.disabled || (b.weight && b.weight > totalStock)
+            }));
+        }
+
+        if (Array.isArray(item.variations) && item.variations.length > 0) {
+            const hasBoxes = item.variations.some(v => v.weight || (v.name && (v.name.toLowerCase().includes('box') || v.name.toLowerCase().includes('slab') || v.name.toLowerCase().includes('sack') || v.name.toLowerCase().includes('pack'))));
+            if (hasBoxes) {
+                return item.variations.map((v, idx) => {
+                    const wt = v.weight || parseFloat(v.name.replace(/[^0-9.]/g, '')) || 25;
+                    return {
+                        id: v.id || `box-${idx + 1}`,
+                        name: v.name,
+                        weight: wt,
+                        disabled: isOutOfStock || !!v.disabled || wt > totalStock
+                    };
+                });
+            }
+        }
+
+        if (totalStock > 0 && !isOutOfStock) {
+            const unitName = (item.unit || 'kg').toLowerCase();
+            const prefix = (unitName === 'slab') ? 'Slab' : (unitName === 'sack') ? 'Sack' : (unitName === 'pack') ? 'Pack' : 'Box';
+            
+            if (unitName === 'sack' || unitName === 'pack') {
+                return [
+                    { id: 'box-1', name: `${prefix} 1`, weight: 25, disabled: 25 > totalStock },
+                    { id: 'box-2', name: `${prefix} 2`, weight: 25, disabled: 25 > totalStock },
+                    { id: 'box-3', name: `${prefix} 3`, weight: 25, disabled: 25 > totalStock }
+                ];
+            }
+
+            const box1Weight = Number((totalStock * 0.3302).toFixed(3));
+            const box2Weight = Number((totalStock * 0.3261).toFixed(3));
+            const box3Weight = Number((totalStock - box1Weight - box2Weight).toFixed(3));
+            return [
+                { id: 'box-1', name: `${prefix} 1`, weight: box1Weight, disabled: box1Weight <= 0 || box1Weight > totalStock },
+                { id: 'box-2', name: `${prefix} 2`, weight: box2Weight, disabled: box2Weight <= 0 || box2Weight > totalStock },
+                { id: 'box-3', name: `${prefix} 3`, weight: box3Weight, disabled: box3Weight <= 0 || box3Weight > totalStock }
+            ].filter(b => b.weight > 0);
+        }
+        return [];
+    };
 
     // Order type and payment state
     const [orderType, setOrderType] = useState('');
@@ -359,6 +412,8 @@ const Home = () => {
     });
 
     const openProductSelection = (item) => {
+        const availableBoxes = getItemBoxes(item);
+        const firstBox = availableBoxes.find(b => !b.disabled) || availableBoxes[0] || null;
         const firstVariation = (item.variations || []).find(v => !v.disabled);
 
         let initialFlavor = [];
@@ -378,6 +433,7 @@ const Home = () => {
 
         setSelectedProduct(item);
         setSelectionOptions({
+            box: firstBox,
             variation: firstVariation || null,
             flavors: initialFlavor,
             addons: []
@@ -385,21 +441,26 @@ const Home = () => {
     };
 
     const addToCart = (item, options) => {
-        const cartItemId = `${item.id}-${options.variation?.name || ''}-${options.flavors.sort().join(',')}-${options.addons.map(a => a.name).join(',')}`;
+        const boxKey = options.box ? (options.box.id || options.box.name) : '';
+        const cartItemId = `${item.id}-${boxKey}-${options.variation?.name || ''}-${(options.flavors || []).sort().join(',')}-${(options.addons || []).map(a => a.name).join(',')}`;
         const existing = cart.find(i => i.cartItemId === cartItemId);
 
-        const variationPrice = options.variation ? Number(options.variation.price) : 0;
-        const basePrice = Number(item.promo_price || item.price);
-        // Use variation price if set (>0), otherwise use base price
-        // UPDATE: Specifically for Pork Ribs Barbeque, we make it additive
-        let price;
-        if (item.name?.toLowerCase().includes('pork ribs')) {
-            price = basePrice + variationPrice;
+        const pricePerKg = Number(item.promo_price || item.price);
+        let basePrice;
+
+        if (options.box) {
+            basePrice = Number((options.box.weight * pricePerKg).toFixed(2));
         } else {
-            price = variationPrice > 0 ? variationPrice : basePrice;
+            const variationPrice = options.variation ? Number(options.variation.price) : 0;
+            if (item.name?.toLowerCase().includes('pork ribs')) {
+                basePrice = pricePerKg + variationPrice;
+            } else {
+                basePrice = variationPrice > 0 ? variationPrice : pricePerKg;
+            }
         }
-        const addonsPrice = options.addons.reduce((sum, a) => sum + Number(a.price), 0);
-        const finalPrice = price + addonsPrice;
+
+        const addonsPrice = (options.addons || []).reduce((sum, a) => sum + Number(a.price), 0);
+        const finalPrice = Number((basePrice + addonsPrice).toFixed(2));
 
         if (existing) {
             setCart(cart.map(i => i.cartItemId === cartItemId ? { ...i, quantity: i.quantity + 1 } : i));
@@ -407,6 +468,8 @@ const Home = () => {
             setCart([...cart, {
                 ...item,
                 cartItemId,
+                selectedBox: options.box,
+                pricePerKg,
                 selectedVariation: options.variation,
                 selectedFlavors: options.flavors,
                 selectedAddons: options.addons,
@@ -443,9 +506,13 @@ const Home = () => {
     const copyOrderDetails = async () => {
         const itemDetails = cart.map(item => {
             let d = `${item.name} (x${item.quantity})`;
-            if (item.selectedVariation) d += ` - ${item.selectedVariation.name}`;
+            if (item.selectedBox) {
+                d += ` - ${item.selectedBox.name} (${item.selectedBox.weight} kg @ ₱${item.pricePerKg}/kg = ₱${item.finalPrice.toLocaleString()})`;
+            } else if (item.selectedVariation) {
+                d += ` - ${item.selectedVariation.name}`;
+            }
             if (item.selectedFlavors && item.selectedFlavors.length > 0) d += ` [${item.selectedFlavors.join(', ')}]`;
-            if (item.selectedAddons.length > 0) d += ` + ${item.selectedAddons.map(a => a.name).join(', ')}`;
+            if (item.selectedAddons && item.selectedAddons.length > 0) d += ` + ${item.selectedAddons.map(a => a.name).join(', ')}`;
             return d;
         });
 
@@ -536,9 +603,13 @@ const Home = () => {
         // --- SAVE ORDER TO SUPABASE ---
         const itemDetails = cart.map(item => {
             let d = `${item.name} (x${item.quantity})`;
-            if (item.selectedVariation) d += ` - ${item.selectedVariation.name}`;
+            if (item.selectedBox) {
+                d += ` - ${item.selectedBox.name} (${item.selectedBox.weight} kg @ ₱${item.pricePerKg}/kg = ₱${item.finalPrice.toLocaleString()})`;
+            } else if (item.selectedVariation) {
+                d += ` - ${item.selectedVariation.name}`;
+            }
             if (item.selectedFlavors && item.selectedFlavors.length > 0) d += ` [${item.selectedFlavors.join(', ')}]`;
-            if (item.selectedAddons.length > 0) d += ` + ${item.selectedAddons.map(a => a.name).join(', ')}`;
+            if (item.selectedAddons && item.selectedAddons.length > 0) d += ` + ${item.selectedAddons.map(a => a.name).join(', ')}`;
             return d;
         });
 
@@ -792,60 +863,65 @@ Thank you!`;
                                         <span className="menu-category-badge">{catItems.length} item{catItems.length !== 1 ? 's' : ''}</span>
                                     </div>
 
-                                    {/* Items Grid */}
-                                    <div className="menu-grid">
+                                    {/* Items List Format */}
+                                    <div className="menu-list-container">
                                         {catItems.map(item => (
-                                            <div className="menu-item-card" key={item.id}
-                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1, position: 'relative' }}
+                                            <div className="menu-item-list-card" key={item.id}
+                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1 }}
                                             >
-                                                <div style={{ position: 'relative' }}>
-                                                    <img src={item.image} alt={item.name} className="menu-item-image" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
-                                                    {item.min_order_note && (
-                                                        <span style={{ position: 'absolute', top: '6px', left: '6px', background: 'var(--primary)', color: 'white', padding: '3px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
-                                                            {item.min_order_note}
-                                                        </span>
-                                                    )}
-                                                    {item.stock !== undefined && item.stock > 0 && item.stock <= (item.low_stock_threshold || 5) && (
-                                                        <span style={{ position: 'absolute', top: '6px', right: '6px', background: '#dc2626', color: 'white', padding: '3px 7px', borderRadius: '20px', fontSize: '0.62rem', fontWeight: 800 }}>
-                                                            ⚠️ Low
-                                                        </span>
-                                                    )}
+                                                {/* Left Image Thumbnail */}
+                                                <div className="menu-item-list-img-wrapper">
+                                                    <img src={item.image} alt={item.name} className="menu-item-list-img" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                                                     {(item.out_of_stock || item.stock === 0) && (
-                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '0.5px' }}>
+                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.68)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.62rem', textAlign: 'center', padding: '2px', letterSpacing: '0.3px' }}>
                                                             OUT OF STOCK
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="menu-item-info">
-                                                    <h3 className="menu-item-name">{item.name}</h3>
-                                                    <p className="menu-item-desc">{item.description}</p>
-                                                    <div style={{ marginTop: 'auto' }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                                            <div>
-                                                                {item.promo_price ? (
-                                                                    <>
-                                                                        <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.7rem', marginRight: '3px' }}>₱{item.price}</span>
-                                                                        <span className="menu-item-price" style={{ color: '#dc2626' }}>₱{item.promo_price}</span>
-                                                                    </>
-                                                                ) : (
-                                                                    <span className="menu-item-price">₱{item.price}</span>
-                                                                )}
-                                                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: '2px' }}>/{item.unit || 'kg'}</span>
-                                                            </div>
-                                                            {item.stock !== undefined && item.stock > 0 && (
-                                                                <span style={{ fontSize: '0.68rem', color: item.stock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
-                                                                    Stk:{item.stock}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <button
-                                                            className="btn-success"
-                                                            disabled={item.out_of_stock || item.stock === 0 || !isOpen}
-                                                            onClick={() => openProductSelection(item)}
-                                                        >
-                                                            <Plus size={13} /> Add to Order
-                                                        </button>
+
+                                                {/* Middle Content */}
+                                                <div className="menu-item-list-content">
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                        <h3 className="menu-item-list-name">{item.name}</h3>
+                                                        {item.min_order_note && (
+                                                            <span style={{ background: 'var(--primary)', color: 'white', padding: '2px 7px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
+                                                                {item.min_order_note}
+                                                            </span>
+                                                        )}
+                                                        {item.stock !== undefined && item.stock > 0 && item.stock <= (item.low_stock_threshold || 5) && (
+                                                            <span style={{ background: '#dc2626', color: 'white', padding: '2px 6px', borderRadius: '12px', fontSize: '0.62rem', fontWeight: 800 }}>
+                                                                ⚠️ Low Stock
+                                                            </span>
+                                                        )}
                                                     </div>
+                                                    <p className="menu-item-list-desc">{item.description}</p>
+                                                    {item.stock !== undefined && item.stock > 0 && (
+                                                        <span style={{ fontSize: '0.72rem', color: item.stock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
+                                                            Available Stock: <strong>{item.stock} {item.unit || 'kg'}</strong>
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Right Price & Add Button */}
+                                                <div className="menu-item-list-right">
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        {item.promo_price ? (
+                                                            <>
+                                                                <div style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.72rem' }}>₱{item.price}</div>
+                                                                <div className="menu-item-list-price" style={{ color: '#dc2626' }}>₱{item.promo_price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
+                                                            </>
+                                                        ) : (
+                                                            <div className="menu-item-list-price">₱{item.price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        className="btn-success"
+                                                        style={{ padding: '8px 14px', borderRadius: '10px', fontSize: '0.78rem', width: 'auto', minWidth: '100px' }}
+                                                        disabled={item.out_of_stock || item.stock === 0 || !isOpen}
+                                                        onClick={() => openProductSelection(item)}
+                                                    >
+                                                        <Plus size={14} /> Add to Order
+                                                    </button>
                                                 </div>
                                             </div>
                                         ))}
@@ -888,35 +964,40 @@ Thank you!`;
                                         <h2>Other Premium Selections</h2>
                                         <span className="menu-category-badge">{orphanItems.length} item{orphanItems.length !== 1 ? 's' : ''}</span>
                                     </div>
-                                    <div className="menu-grid">
+                                    <div className="menu-list-container">
                                         {orphanItems.map(item => (
-                                            <div className="menu-item-card" key={item.id}
-                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1, position: 'relative' }}
+                                            <div className="menu-item-list-card" key={item.id}
+                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1 }}
                                             >
-                                                <div style={{ position: 'relative' }}>
-                                                    <img src={item.image} alt={item.name} className="menu-item-image" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
-                                                    {item.min_order_note && (
-                                                        <span style={{ position: 'absolute', top: '6px', left: '6px', background: 'var(--primary)', color: 'white', padding: '3px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
-                                                            {item.min_order_note}
-                                                        </span>
+                                                <div className="menu-item-list-img-wrapper">
+                                                    <img src={item.image} alt={item.name} className="menu-item-list-img" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
+                                                    {(item.out_of_stock || item.stock === 0) && (
+                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.68)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.62rem', textAlign: 'center', padding: '2px' }}>
+                                                            OUT OF STOCK
+                                                        </div>
                                                     )}
                                                 </div>
-                                                <div className="menu-item-info">
-                                                    <h3 className="menu-item-name">{item.name}</h3>
-                                                    <p className="menu-item-desc">{item.description}</p>
-                                                    <div style={{ marginTop: 'auto' }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                                            <span className="menu-item-price">₱{item.price}</span>
-                                                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>/{item.unit || 'kg'}</span>
-                                                        </div>
-                                                        <button
-                                                            className="btn-success"
-                                                            disabled={item.out_of_stock || item.stock === 0 || !isOpen}
-                                                            onClick={() => openProductSelection(item)}
-                                                        >
-                                                            <Plus size={13} /> Add to Order
-                                                        </button>
+                                                <div className="menu-item-list-content">
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                        <h3 className="menu-item-list-name">{item.name}</h3>
+                                                        {item.min_order_note && (
+                                                            <span style={{ background: 'var(--primary)', color: 'white', padding: '2px 7px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800 }}>
+                                                                {item.min_order_note}
+                                                            </span>
+                                                        )}
                                                     </div>
+                                                    <p className="menu-item-list-desc">{item.description}</p>
+                                                </div>
+                                                <div className="menu-item-list-right">
+                                                    <div className="menu-item-list-price">₱{item.price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
+                                                    <button
+                                                        className="btn-success"
+                                                        style={{ padding: '8px 14px', borderRadius: '10px', fontSize: '0.78rem', width: 'auto', minWidth: '100px' }}
+                                                        disabled={item.out_of_stock || item.stock === 0 || !isOpen}
+                                                        onClick={() => openProductSelection(item)}
+                                                    >
+                                                        <Plus size={14} /> Add to Order
+                                                    </button>
                                                 </div>
                                             </div>
                                         ))}
@@ -988,43 +1069,144 @@ Thank you!`;
                 </div>
             </footer>
 
-            {/* Selection Modal (Simplified for brevity, assumes logic same as before) */}
+            {/* Selection Modal with Box Weight & Instant Total Calculation */}
             {selectedProduct && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-                    <div style={{ background: 'white', maxWidth: '500px', width: '100%', borderRadius: '24px', padding: '30px', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
-                        <button onClick={() => setSelectedProduct(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} /></button>
-                        <div style={{ display: 'flex', gap: '20px', marginBottom: '16px' }}>
-                            <img src={selectedProduct.image} style={{ width: '100px', height: '100px', borderRadius: '12px', objectFit: 'cover' }} alt="" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
-                            <div><h2 style={{ margin: 0 }}>{selectedProduct.name}</h2><p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{selectedProduct.description}</p></div>
+                    <div style={{ background: 'white', maxWidth: '520px', width: '100%', borderRadius: '24px', padding: '28px', position: 'relative', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                        <button onClick={() => setSelectedProduct(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} color="#475569" /></button>
+                        
+                        <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'center' }}>
+                            <img src={selectedProduct.image} style={{ width: '90px', height: '90px', borderRadius: '16px', objectFit: 'cover', border: '1px solid #e2e8f0' }} alt={selectedProduct.name} onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '1.35rem', color: '#0f172a', fontWeight: 800 }}>{selectedProduct.name}</h2>
+                                <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0' }}>{selectedProduct.description}</p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                                    <span style={{ background: '#f1f5f9', color: '#0f172a', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', fontSize: '0.85rem' }}>
+                                        ₱{Number(selectedProduct.promo_price || selectedProduct.price).toFixed(2)} / {selectedProduct.unit || 'kg'}
+                                    </span>
+                                    {selectedProduct.stock !== undefined && (
+                                        <span style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 700 }}>
+                                            Available Stock: {selectedProduct.stock} kg
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Instruction banner – shown whenever there are weight/size variations */}
-                        {selectedProduct.variations && selectedProduct.variations.length > 0 && (
-                            <div style={{
-                                background: '#fffbeb',
-                                border: '1px solid #fcd34d',
-                                borderRadius: '12px',
-                                padding: '12px 14px',
-                                marginBottom: '20px',
-                                display: 'flex',
-                                gap: '10px',
-                                alignItems: 'flex-start'
-                            }}>
-                                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}></span>
-                                <div>
-                                    <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem', color: '#92400e' }}>
-                                        Pumili ng available na weight ng kahon (box) sa storage
-                                    </p>
-                                    <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#b45309', lineHeight: 1.4 }}>
-                                        Pakitingnan ang mga pagpipilian sa ibaba at piliin ang tamang bigat na available. Ang mga may label na <em>"Out of Stock"</em> ay hindi na available.
-                                    </p>
+                        {/* Available Box Stock Weights Section */}
+                        {getItemBoxes(selectedProduct).length > 0 && (
+                            <div style={{ marginBottom: '22px' }}>
+                                <div style={{
+                                    background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                                    border: '1.5px solid #a7f3d0',
+                                    borderRadius: '16px',
+                                    padding: '14px 16px',
+                                    marginBottom: '16px',
+                                    display: 'flex',
+                                    gap: '12px',
+                                    alignItems: 'center'
+                                }}>
+                                    <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>📦</span>
+                                    <div>
+                                        <h4 style={{ margin: 0, fontWeight: 800, fontSize: '0.92rem', color: '#065f46' }}>
+                                            Pumili ng Timbang ng Box (Available Stocks)
+                                        </h4>
+                                        <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#047857', lineHeight: 1.35 }}>
+                                            Kabuuang Stock: <strong>{selectedProduct.stock} kg</strong> — Piliin ang kahon (Box 1, Box 2, Box 3) na nais kunin.
+                                        </p>
+                                    </div>
                                 </div>
+
+                                <label style={{ fontWeight: 800, display: 'block', marginBottom: '10px', fontSize: '0.9rem', color: '#1e293b' }}>
+                                    Mga Available na Kahon (Box Options):
+                                </label>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                                    {getItemBoxes(selectedProduct).map(b => {
+                                        const isSelected = selectionOptions.box?.id === b.id || selectionOptions.box?.name === b.name;
+                                        const pricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
+                                        const computedBoxPrice = (b.weight * pricePerKg).toFixed(2);
+
+                                        return (
+                                            <button
+                                                key={b.id || b.name}
+                                                disabled={b.disabled}
+                                                type="button"
+                                                onClick={() => setSelectionOptions({ ...selectionOptions, box: b })}
+                                                style={{
+                                                    padding: '12px 14px',
+                                                    borderRadius: '14px',
+                                                    border: isSelected ? '2px solid #059669' : '1.5px solid #cbd5e1',
+                                                    background: isSelected ? '#f0fdf4' : 'white',
+                                                    color: isSelected ? '#065f46' : '#334155',
+                                                    cursor: b.disabled ? 'not-allowed' : 'pointer',
+                                                    opacity: b.disabled ? 0.4 : 1,
+                                                    textAlign: 'left',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: isSelected ? '0 4px 12px rgba(5, 150, 105, 0.15)' : 'none'
+                                                }}
+                                            >
+                                                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: isSelected ? '#059669' : '#0f172a' }}>
+                                                    {b.name}
+                                                </div>
+                                                <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '2px', fontWeight: 700 }}>
+                                                    ⚖️ {b.weight} kg
+                                                </div>
+                                                <div style={{ fontSize: '0.78rem', color: '#059669', marginTop: '4px', fontWeight: 800 }}>
+                                                    ₱{Number(computedBoxPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Selected Box Computation Summary Card */}
+                                {selectionOptions.box && (
+                                    <div style={{
+                                        marginTop: '16px',
+                                        background: 'linear-gradient(135deg, #071708 0%, #0c250d 100%)',
+                                        color: 'white',
+                                        padding: '18px',
+                                        borderRadius: '18px',
+                                        border: '1.5px solid #F9B700',
+                                        boxShadow: '0 8px 20px rgba(0,0,0,0.12)'
+                                    }}>
+                                        <div style={{ fontSize: '0.78rem', color: '#F9B700', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 800, marginBottom: '8px' }}>
+                                            Kalkulasyon ng Napiling Box:
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px', borderBottom: '1px dashed rgba(255,255,255,0.2)', paddingBottom: '10px' }}>
+                                            <div>
+                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Napiling Box</div>
+                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#ffffff' }}>{selectionOptions.box.name}</div>
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Timbang (Weight)</div>
+                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#ffffff' }}>{selectionOptions.box.weight} kg</div>
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Presyo Bawat Kilo</div>
+                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#F9B700' }}>
+                                                    ₱{Number(selectedProduct.promo_price || selectedProduct.price).toFixed(2)} / kg
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Kabuuan (Total Price)</div>
+                                                <div style={{ fontWeight: 900, fontSize: '1.15rem', color: '#4ade80' }}>
+                                                    ₱{(selectionOptions.box.weight * Number(selectedProduct.promo_price || selectedProduct.price)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', fontStyle: 'italic', textAlign: 'center' }}>
+                                            Kalkulasyon: {selectionOptions.box.weight} kg × ₱{Number(selectedProduct.promo_price || selectedProduct.price).toFixed(2)} = ₱{(selectionOptions.box.weight * Number(selectedProduct.promo_price || selectedProduct.price)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        {selectedProduct.variations && selectedProduct.variations.length > 0 && (
+                        {/* Standard Variations logic (if no boxes) */}
+                        {getItemBoxes(selectedProduct).length === 0 && selectedProduct.variations && selectedProduct.variations.length > 0 && (
                             <div style={{ marginBottom: '20px' }}>
-                                <label style={{ fontWeight: 700, display: 'block', marginBottom: '10px' }}>Piliin ang Weight ng Box</label>
+                                <label style={{ fontWeight: 700, display: 'block', marginBottom: '10px' }}>Piliin ang Weight / Option</label>
                                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                                     {selectedProduct.variations.map(v => (
                                         <button
@@ -1091,7 +1273,6 @@ Thank you!`;
                                             <button
                                                 key={name}
                                                 onClick={() => {
-                                                    // Single select logic
                                                     setSelectionOptions({ ...selectionOptions, flavors: [name] });
                                                 }}
                                                 style={{
@@ -1110,14 +1291,20 @@ Thank you!`;
                             </div>
                         )}
 
-                        <button className="btn-primary" style={{ width: '100%', padding: '15px', fontWeight: 700, fontSize: '1.1rem' }} onClick={() => addToCart(selectedProduct, selectionOptions)}>
-                            Add to Cart - ₱{(
-                                (selectionOptions.variation && Number(selectionOptions.variation.price) > 0)
-                                    ? (selectedProduct.name?.toLowerCase().includes('pork ribs')
-                                        ? Number(selectedProduct.promo_price || selectedProduct.price) + Number(selectionOptions.variation.price)
-                                        : Number(selectionOptions.variation.price))
-                                    : Number(selectedProduct.promo_price || selectedProduct.price)
-                            ) + selectionOptions.addons.reduce((sum, a) => sum + Number(a.price), 0)}
+                        <button className="btn-primary" style={{ width: '100%', padding: '16px', fontWeight: 800, fontSize: '1.1rem', borderRadius: '14px', background: 'var(--primary)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => addToCart(selectedProduct, selectionOptions)}>
+                            <Plus size={18} /> Add to Cart — ₱{(() => {
+                                const pricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
+                                let base = pricePerKg;
+                                if (selectionOptions.box) {
+                                    base = selectionOptions.box.weight * pricePerKg;
+                                } else if (selectionOptions.variation && Number(selectionOptions.variation.price) > 0) {
+                                    base = selectedProduct.name?.toLowerCase().includes('pork ribs')
+                                        ? pricePerKg + Number(selectionOptions.variation.price)
+                                        : Number(selectionOptions.variation.price);
+                                }
+                                const addons = (selectionOptions.addons || []).reduce((sum, a) => sum + Number(a.price), 0);
+                                return Number((base + addons).toFixed(2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                            })()}
                         </button>
                     </div>
                 </div>
@@ -1466,10 +1653,10 @@ Thank you!`;
                                 <div style={{ flex: 1 }}>
                                     <h4 style={{ margin: 0 }}>{item.name}</h4>
                                     <p style={{ margin: '2px 0 5px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                        {item.selectedVariation?.name}
+                                        {item.selectedBox ? `📦 ${item.selectedBox.name} (${item.selectedBox.weight} kg @ ₱${item.pricePerKg}/kg)` : (item.selectedVariation?.name || '')}
                                         {item.selectedFlavors && item.selectedFlavors.length > 0 ? ` | ${item.selectedFlavors.join(', ')}` : ''}
                                     </p>
-                                    <span style={{ fontWeight: 700 }}>₱{item.finalPrice}</span>
+                                    <span style={{ fontWeight: 800, color: 'var(--primary)' }}>₱{Number(item.finalPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                     <button onClick={() => removeFromCart(item.cartItemId)} style={{ border: '1px solid var(--border)', background: 'none', padding: '2px', borderRadius: '4px' }}><Minus size={14} /></button>
