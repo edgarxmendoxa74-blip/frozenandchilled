@@ -1177,7 +1177,8 @@ Thank you!`;
                                                     </button>
                                                 </div>
                                             </div>
-                                        })}
+                                        );
+                                    })}
                                     </div>
                                 </div>
                             );
