@@ -20,7 +20,7 @@ const getItemBoxes = (item) => {
     return item.boxes.map(b => ({
       ...b,
       disabled: isOutOfStock || Boolean(b.disabled || b.ordered) || (b.weight && b.weight > totalStock)
-    }));
+    })).slice(0, 6);
   }
 
   if (Array.isArray(item.variations) && item.variations.length > 0) {
@@ -34,7 +34,7 @@ const getItemBoxes = (item) => {
           weight: wt,
           disabled: isOutOfStock || Boolean(v.disabled || v.ordered) || wt > totalStock
         };
-      });
+      }).slice(0, 6);
     }
   }
 
@@ -435,7 +435,7 @@ const Inventory = () => {
         }
       }));
       
-      localStorage.setItem('menuItems', JSON.stringify(allItems));
+      localStorage.setItem('menuItems', JSON.stringify(editingItem ? updated : [savedItem, ...allItems]));
       window.dispatchEvent(new Event('store_data_updated'));
       setShowNewBatchModal(false);
       setShowEditModal(false);
@@ -951,6 +951,10 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
   }, [editableBoxes]);
 
   const handleAddBox = () => {
+    if (editableBoxes.length >= 6) {
+      alert('Maximum na 6 kahon ang pinapayagan.');
+      return;
+    }
     const nextIdx = editableBoxes.length + 1;
     setEditableBoxes(prev => [
       ...prev,
