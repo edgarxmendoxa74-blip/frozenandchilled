@@ -950,24 +950,7 @@ Thank you!`;
                             const isItemInCategory = (item, category) => {
                                 if (!item || !category) return false;
                                 const itemCat = item.category_id || item.categoryId;
-                                if (itemCat === category.id || String(itemCat) === String(category.id)) return true;
-
-                                const getSlug = (val) => {
-                                    if (!val) return '';
-                                    const s = String(val).toLowerCase();
-                                    if (s.includes('high end beef') || s.includes('high-end-beef')) return 'high-end-beef';
-                                    if (s.includes('chicken wholesale') || s.includes('chicken-wholesale')) return 'chicken-wholesale';
-                                    if (s.includes('beef wholesale') || s.includes('beef-wholesale')) return 'beef-wholesale';
-                                    if (s.includes('pork wholesale') || s.includes('pork-wholesale')) return 'pork-wholesale';
-                                    if (s.includes('sides') || s.includes('seafood') || s.includes('sides-others')) return 'sides-others';
-                                    if (s.includes('rice')) return 'rice';
-                                    return s.replace(/[^a-z0-9]/g, '');
-                                };
-
-                                const catSlug = getSlug(category.id) || getSlug(category.name);
-                                const itemSlug = getSlug(itemCat) || getSlug(item.category_name);
-
-                                return Boolean(catSlug && itemSlug && catSlug === itemSlug);
+                                return itemCat === category.id || String(itemCat) === String(category.id);
                             };
 
                             let catItems = items.filter(item => isItemInCategory(item, cat));
@@ -1015,9 +998,7 @@ Thank you!`;
                                                         <p className="menu-item-list-desc">{item.description}</p>
                                                         {!isItemOut && (
                                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                                                                <span style={{ fontSize: '0.72rem', color: availStock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
-                                                                    Available Stock: <strong>{availStock} {item.unit || 'kg'}</strong>
-                                                                </span>
+
                                                                 {(() => {
                                                                     const availBoxes = getItemBoxes(item).filter(b => !b.disabled && !b.ordered);
                                                                     if (availBoxes.length === 0) return null;
@@ -1079,23 +1060,7 @@ Thank you!`;
                                 const isItemInCategory = (it, category) => {
                                     if (!it || !category) return false;
                                     const itemCat = it.category_id || it.categoryId;
-                                    if (itemCat === category.id || String(itemCat) === String(category.id)) return true;
-
-                                    const getSlug = (val) => {
-                                        if (!val) return '';
-                                        const s = String(val).toLowerCase();
-                                        if (s.includes('high end beef') || s.includes('high-end-beef')) return 'high-end-beef';
-                                        if (s.includes('chicken wholesale') || s.includes('chicken-wholesale')) return 'chicken-wholesale';
-                                        if (s.includes('beef wholesale') || s.includes('beef-wholesale')) return 'beef-wholesale';
-                                        if (s.includes('pork wholesale') || s.includes('pork-wholesale')) return 'pork-wholesale';
-                                        if (s.includes('sides') || s.includes('seafood') || s.includes('sides-others')) return 'sides-others';
-                                        if (s.includes('rice')) return 'rice';
-                                        return s.replace(/[^a-z0-9]/g, '');
-                                    };
-
-                                    const catSlug = getSlug(category.id) || getSlug(category.name);
-                                    const itemSlug = getSlug(itemCat) || getSlug(it.category_name);
-                                    return Boolean(catSlug && itemSlug && catSlug === itemSlug);
+                                    return itemCat === category.id || String(itemCat) === String(category.id);
                                 };
 
                                 return !categories.some(cat => isItemInCategory(item, cat));
@@ -1137,9 +1102,7 @@ Thank you!`;
                                                         <p className="menu-item-list-desc">{item.description}</p>
                                                         {!isItemOut && (
                                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                                                                <span style={{ fontSize: '0.72rem', color: availStock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
-                                                                    Available Stock: <strong>{availStock} {item.unit || 'kg'}</strong>
-                                                                </span>
+
                                                                 {(() => {
                                                                     const availBoxes = getItemBoxes(item).filter(b => !b.disabled && !b.ordered);
                                                                     if (availBoxes.length === 0) return null;
@@ -1261,11 +1224,7 @@ Thank you!`;
                                     <span style={{ background: '#f1f5f9', color: '#0f172a', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', fontSize: '0.85rem' }}>
                                         ₱{Number(selectedProduct.promo_price || selectedProduct.price).toFixed(2)} / {selectedProduct.unit || 'kg'}
                                     </span>
-                                    {selectedProduct.stock !== undefined && (
-                                        <span style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 700 }}>
-                                            Available Stock: {getItemAvailableStock(selectedProduct)} kg
-                                        </span>
-                                    )}
+
                                 </div>
                             </div>
                         </div>

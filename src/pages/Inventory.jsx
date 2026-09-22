@@ -612,18 +612,7 @@ const Inventory = () => {
             >
               🟢 OK ({stats.ok})
             </button>
-            <button 
-              className={`filter-chip chip-low ${activeFilter === 'Paubos' ? 'active' : ''}`}
-              onClick={() => setActiveFilter('Paubos')}
-            >
-              🟡 Paubos ({stats.low})
-            </button>
-            <button 
-              className={`filter-chip chip-out ${activeFilter === 'Ubos' ? 'active' : ''}`}
-              onClick={() => setActiveFilter('Ubos')}
-            >
-              🔴 Ubos ({stats.out})
-            </button>
+
           </div>
 
           <div className="search-supplier-wrapper">
