@@ -1,23 +1,19 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
-
-const AuthContext = createContext();
-
-export const useAuth = () => useContext(AuthContext);
+import { AuthContext } from './AuthContextObject';
 
 export const AuthProvider = ({ children }) => {
-    const [currentUser, setCurrentUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [currentUser, setCurrentUser] = useState(() => {
+        const bypassUser = localStorage.getItem('admin_bypass');
+        return bypassUser ? { email: 'admin@chilledandfrozenhub.com', id: 'bypass-id' } : null;
+    });
+    const [loading, setLoading] = useState(() => {
+        const bypassUser = localStorage.getItem('admin_bypass');
+        return !bypassUser;
+    });
 
     useEffect(() => {
-        // Check for developer bypass session first
-        const bypassUser = localStorage.getItem('admin_bypass');
-        if (bypassUser) {
-            setCurrentUser({ email: 'admin@chilledandfrozenhub.com', id: 'bypass-id' });
-            setLoading(false);
-        }
-
-        // Get initial session
+        // Get initial session if not in bypass mode
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (!localStorage.getItem('admin_bypass')) {
                 setCurrentUser(session?.user ?? null);
@@ -27,7 +23,9 @@ export const AuthProvider = ({ children }) => {
 
         // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setCurrentUser(session?.user ?? null);
+            if (!localStorage.getItem('admin_bypass')) {
+                setCurrentUser(session?.user ?? null);
+            }
         });
 
         return () => subscription.unsubscribe();

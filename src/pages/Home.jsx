@@ -47,37 +47,38 @@ const DELIVERY_LOCATIONS = [
     { name: 'Bay-ang', charge: 50 }
 ];
 
+const DEFAULT_DELIVERY_LOCATIONS = [
+    { id: 'loc_1', name: 'Poblacion', charge: 35 },
+    { id: 'loc_2', name: 'San Antonio', charge: 35 },
+    { id: 'loc_3', name: 'Mangorocoro', charge: 35 },
+    { id: 'loc_4', name: 'Progreso', charge: 35 },
+    { id: 'loc_5', name: 'Pili', charge: 35 },
+    { id: 'loc_6', name: 'Lanjagan', charge: 35 },
+    { id: 'loc_7', name: 'Taguhangin', charge: 35 },
+    { id: 'loc_8', name: 'Bugtong Bukid', charge: 35 },
+    { id: 'loc_9', name: 'Brgy. Rojas', charge: 35 },
+    { id: 'loc_10', name: 'Pinantan Elizalde', charge: 35 },
+    { id: 'loc_11', name: 'Puente Bunglas', charge: 35 },
+    { id: 'loc_12', name: 'Bat-os', charge: 35 },
+    { id: 'loc_13', name: 'Malayu-an', charge: 40 },
+    { id: 'loc_14', name: 'Barrido', charge: 40 },
+    { id: 'loc_15', name: 'Culasi', charge: 45 },
+    { id: 'loc_16', name: 'Luca', charge: 45 },
+    { id: 'loc_17', name: 'Bay-ang', charge: 50 }
+];
+
 const Home = () => {
     const [cart, setCart] = useState([]);
     const [items, setItems] = useState([]);
     const [categories, setCategories] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
     const [activeCategory, setActiveCategory] = useState('oysters'); // Will update after load
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-    const DEFAULT_DELIVERY_LOCATIONS = [
-        { id: 'loc_1', name: 'Poblacion', charge: 35 },
-        { id: 'loc_2', name: 'San Antonio', charge: 35 },
-        { id: 'loc_3', name: 'Mangorocoro', charge: 35 },
-        { id: 'loc_4', name: 'Progreso', charge: 35 },
-        { id: 'loc_5', name: 'Pili', charge: 35 },
-        { id: 'loc_6', name: 'Lanjagan', charge: 35 },
-        { id: 'loc_7', name: 'Taguhangin', charge: 35 },
-        { id: 'loc_8', name: 'Bugtong Bukid', charge: 35 },
-        { id: 'loc_9', name: 'Brgy. Rojas', charge: 35 },
-        { id: 'loc_10', name: 'Pinantan Elizalde', charge: 35 },
-        { id: 'loc_11', name: 'Puente Bunglas', charge: 35 },
-        { id: 'loc_12', name: 'Bat-os', charge: 35 },
-        { id: 'loc_13', name: 'Malayu-an', charge: 40 },
-        { id: 'loc_14', name: 'Barrido', charge: 40 },
-        { id: 'loc_15', name: 'Culasi', charge: 45 },
-        { id: 'loc_16', name: 'Luca', charge: 45 },
-        { id: 'loc_17', name: 'Bay-ang', charge: 50 }
-    ];
-
     const [deliveryLocations, setDeliveryLocations] = useState(() => {
         const saved = localStorage.getItem('deliveryLocations');
         if (saved) {
-            try { return JSON.parse(saved); } catch (e) {}
+            try { return JSON.parse(saved); } catch { /* ignore parse error */ }
         }
         return DEFAULT_DELIVERY_LOCATIONS;
     });
@@ -145,7 +146,7 @@ const Home = () => {
                 const savedCatsRaw = localStorage.getItem('categories');
                 let savedCatsList = [];
                 if (savedCatsRaw) {
-                    try { savedCatsList = JSON.parse(savedCatsRaw); } catch (e) {}
+                    try { savedCatsList = JSON.parse(savedCatsRaw); } catch { /* ignore */ }
                 }
 
                 const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
@@ -153,7 +154,7 @@ const Home = () => {
                 if (catData && catData.length > 0) {
                     combinedCats = [...catData];
                     for (const savedCat of savedCatsList) {
-                        const idx = combinedCats.findIndex(c => (c.id && c.id === savedCat.id) || (c.name && c.name.toLowerCase().trim() === (savedCat.name || '').toLowerCase().trim()));
+                        const idx = combinedCats.findIndex(c => (c.name && c.name.toLowerCase().trim() === (savedCat.name || '').toLowerCase().trim()));
                         if (idx !== -1) {
                             combinedCats[idx] = { ...combinedCats[idx], ...savedCat };
                         } else {
@@ -163,7 +164,18 @@ const Home = () => {
                 } else {
                     combinedCats = savedCatsList.length > 0 ? savedCatsList : initialCategories;
                 }
-                const finalCats = deduplicateByKey(combinedCats);
+                
+                // Strict deduplication by name
+                const uniqueCats = [];
+                const seenCatNames = new Set();
+                combinedCats.forEach(cat => {
+                    const catName = (cat.name || '').trim().toLowerCase();
+                    if (!seenCatNames.has(catName)) {
+                        seenCatNames.add(catName);
+                        uniqueCats.push(cat);
+                    }
+                });
+                const finalCats = uniqueCats;
                 setCategories(finalCats);
                 if (finalCats.length > 0) setActiveCategory(prev => prev || finalCats[0].id);
 
@@ -171,7 +183,7 @@ const Home = () => {
                 const savedItemsRaw = localStorage.getItem('menuItems');
                 let savedItemsList = [];
                 if (savedItemsRaw) {
-                    try { savedItemsList = JSON.parse(savedItemsRaw); } catch (e) {}
+                    try { savedItemsList = JSON.parse(savedItemsRaw); } catch { /* ignore */ }
                 }
 
                 const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
@@ -199,7 +211,7 @@ const Home = () => {
                     try {
                         const parsed = JSON.parse(savedPaymentsRaw);
                         savedPaymentsList = Array.isArray(parsed) ? parsed : [];
-                    } catch (e) {}
+                    } catch { /* ignore */ }
                 }
 
                 const { data: payData } = await supabase.from('payment_settings').select('*').eq('is_active', true);
@@ -265,15 +277,14 @@ const Home = () => {
                 setDeliveryLocations(combinedLocs);
 
                 // 4. Fetch Order Types
-                const lalamoveType = { id: 'lalamove-delivery', name: 'Lalamove Delivery' };
                 const { data: typeData } = await supabase.from('order_types').select('*').eq('is_active', true);
                 if (typeData && typeData.length > 0) {
-                    const merged = deduplicateByKey([...typeData, lalamoveType]);
+                    const merged = deduplicateByKey([...typeData]);
                     setOrderTypes(merged);
                 } else {
                     const savedOrderTypes = localStorage.getItem('orderTypes');
                     if (savedOrderTypes) {
-                        const parsed = deduplicateByKey([...JSON.parse(savedOrderTypes), lalamoveType]);
+                        const parsed = deduplicateByKey([...JSON.parse(savedOrderTypes)]);
                         if (parsed.length > 0) setOrderTypes(parsed);
                     }
                 }
@@ -331,7 +342,9 @@ const Home = () => {
     useEffect(() => {
         const bannerCount = (storeSettings.banner_images || []).length;
         if (bannerCount === 0) return;
-        const timer = setInterval(nextBanner, 5000);
+        const timer = setInterval(() => {
+            setCurrentBannerIndex(prev => (prev + 1) % bannerCount);
+        }, 5000);
         return () => clearInterval(timer);
     }, [storeSettings.banner_images]);
 
@@ -351,9 +364,9 @@ const Home = () => {
         const isOutOfStock = Boolean(item.out_of_stock || totalStock <= 0);
 
         if (Array.isArray(item.boxes) && item.boxes.length > 0) {
-            return item.boxes.map((b, idx) => ({
+            return item.boxes.map(b => ({
                 ...b,
-                disabled: isOutOfStock || b.disabled || (b.weight && b.weight > totalStock)
+                disabled: isOutOfStock || Boolean(b.disabled || b.ordered) || (b.stockQty !== undefined && Number(b.stockQty) <= 0)
             }));
         }
 
@@ -366,7 +379,7 @@ const Home = () => {
                         id: v.id || `box-${idx + 1}`,
                         name: v.name,
                         weight: wt,
-                        disabled: isOutOfStock || !!v.disabled || wt > totalStock
+                        disabled: isOutOfStock || Boolean(v.disabled || v.ordered) || wt > totalStock
                     };
                 });
             }
@@ -396,6 +409,18 @@ const Home = () => {
         return [];
     };
 
+    const getItemAvailableStock = (item) => {
+        if (!item) return 0;
+        if (item.out_of_stock) return 0;
+        
+        if (Array.isArray(item.boxes) && item.boxes.length > 0) {
+            const availBoxes = item.boxes.filter(b => !b.disabled && !b.ordered && (b.stockQty === undefined || Number(b.stockQty) > 0));
+            const totalW = availBoxes.reduce((sum, b) => sum + (parseFloat(b.weight) || 0) * (b.stockQty !== undefined ? Number(b.stockQty) : 1), 0);
+            return Number(totalW.toFixed(3));
+        }
+        return Number(item.stock || 0);
+    };
+
     // Order type and payment state
     const [orderType, setOrderType] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
@@ -413,14 +438,13 @@ const Home = () => {
 
     const openProductSelection = (item) => {
         const availableBoxes = getItemBoxes(item);
-        const firstBox = availableBoxes.find(b => !b.disabled) || availableBoxes[0] || null;
-        const firstVariation = (item.variations || []).find(v => !v.disabled);
+        const firstBox = availableBoxes.find(b => !b.disabled && !b.ordered) || null;
+        const firstVariation = (item.variations || []).find(v => !v.disabled && !v.ordered) || null;
 
         let initialFlavor = [];
         if (item.flavors && item.flavors.length > 0) {
             const first = item.flavors[0];
             const name = typeof first === 'string' ? first : (first.disabled ? null : first.name);
-            // Search for first non-disabled if first is disabled
             if (!name) {
                 const valid = item.flavors.find(f => typeof f === 'string' || !f.disabled);
                 if (valid) {
@@ -434,7 +458,7 @@ const Home = () => {
         setSelectedProduct(item);
         setSelectionOptions({
             box: firstBox,
-            variation: firstVariation || null,
+            variation: firstVariation,
             flavors: initialFlavor,
             addons: []
         });
@@ -445,17 +469,23 @@ const Home = () => {
         const cartItemId = `${item.id}-${boxKey}-${options.variation?.name || ''}-${(options.flavors || []).sort().join(',')}-${(options.addons || []).map(a => a.name).join(',')}`;
         const existing = cart.find(i => i.cartItemId === cartItemId);
 
-        const pricePerKg = Number(item.promo_price || item.price);
+        const itemPricePerKg = Number(item.promo_price || item.price);
         let basePrice;
 
         if (options.box) {
-            basePrice = Number((options.box.weight * pricePerKg).toFixed(2));
+            // Use box's own price if set in inventory, otherwise compute from box's pricePerKg or item price
+            if (options.box.price !== undefined && options.box.price !== null && options.box.price !== '') {
+                basePrice = Number(options.box.price);
+            } else {
+                const boxPKg = (options.box.pricePerKg !== undefined && options.box.pricePerKg !== '') ? Number(options.box.pricePerKg) : itemPricePerKg;
+                basePrice = Number((options.box.weight * boxPKg).toFixed(2));
+            }
         } else {
             const variationPrice = options.variation ? Number(options.variation.price) : 0;
             if (item.name?.toLowerCase().includes('pork ribs')) {
-                basePrice = pricePerKg + variationPrice;
+                basePrice = itemPricePerKg + variationPrice;
             } else {
-                basePrice = variationPrice > 0 ? variationPrice : pricePerKg;
+                basePrice = variationPrice > 0 ? variationPrice : itemPricePerKg;
             }
         }
 
@@ -469,7 +499,7 @@ const Home = () => {
                 ...item,
                 cartItemId,
                 selectedBox: options.box,
-                pricePerKg,
+                pricePerKg: itemPricePerKg,
                 selectedVariation: options.variation,
                 selectedFlavors: options.flavors,
                 selectedAddons: options.addons,
@@ -592,7 +622,7 @@ const Home = () => {
         }
 
         // Validate details...
-        const { name, phone, table_number, address, pickup_time, delivery_location } = customerDetails;
+        const { name, phone, address, pickup_time, delivery_location } = customerDetails;
 
         if (orderType === 'pickup' && (!name || !phone || !pickup_time)) { alert('Please provide Name, Phone Number, and Pickup Time.'); return; }
         if (orderType === 'delivery' && (!name || !phone || !delivery_location || !address)) { alert('Please provide Name, Phone Number, Delivery Location, and Address.'); return; }
@@ -627,13 +657,82 @@ const Home = () => {
             if (error) console.error('Error saving order to Supabase:', error);
         });
 
-        // Also save to LocalStorage as a local backup
+        // --- DEDUCT STOCK & DISABLE ORDERED BOXES/VARIATIONS ---
         try {
-            const localOrder = { ...newOrder, id: Date.now(), timestamp: new Date().toISOString() };
-            const existingOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-            localStorage.setItem('orders', JSON.stringify([...existingOrders, localOrder]));
+            const updatedItemsList = [...items];
+            for (const cartItem of cart) {
+                const targetIdx = updatedItemsList.findIndex(i => (i.id && i.id === cartItem.id) || (i.name && i.name.toLowerCase().trim() === (cartItem.name || '').toLowerCase().trim()));
+                if (targetIdx !== -1) {
+                    const currentItem = updatedItemsList[targetIdx];
+                    const orderedWeight = cartItem.selectedBox
+                        ? Number(cartItem.selectedBox.weight)
+                        : (cartItem.selectedVariation?.weight ? Number(cartItem.selectedVariation.weight) : (cartItem.quantity || 1));
+
+                    const currentStockNum = Number(currentItem.stock || 0);
+                    const newStock = Math.max(0, Number((currentStockNum - orderedWeight).toFixed(3)));
+
+                    let updatedBoxes = currentItem.boxes;
+                    if (!Array.isArray(updatedBoxes) || updatedBoxes.length === 0) {
+                        updatedBoxes = getItemBoxes(currentItem);
+                    }
+
+                    if (cartItem.selectedBox && Array.isArray(updatedBoxes)) {
+                        updatedBoxes = updatedBoxes.map(b => {
+                            if ((b.id && b.id === cartItem.selectedBox.id) || (b.name && b.name.toLowerCase().trim() === (cartItem.selectedBox.name || '').toLowerCase().trim())) {
+                                const boxStock = b.stockQty !== undefined ? Number(b.stockQty) : 1;
+                                const orderedQty = Number(cartItem.quantity) || 1;
+                                const newBoxStock = Math.max(0, boxStock - orderedQty);
+                                if (newBoxStock <= 0) {
+                                    return { ...b, stockQty: 0, disabled: true, ordered: true };
+                                }
+                                return { ...b, stockQty: newBoxStock };
+                            }
+                            return b;
+                        });
+                    }
+
+                    let updatedVariations = currentItem.variations || [];
+                    if (cartItem.selectedVariation && Array.isArray(updatedVariations)) {
+                        updatedVariations = updatedVariations.map(v => {
+                            if ((v.id && v.id === cartItem.selectedVariation.id) || (v.name && v.name.toLowerCase().trim() === (cartItem.selectedVariation.name || '').toLowerCase().trim())) {
+                                return { ...v, disabled: true, ordered: true };
+                            }
+                            return v;
+                        });
+                    }
+
+                    const hasAvailableBoxes = updatedBoxes.some(b => !b.disabled && !b.ordered);
+                    const isNowOutOfStock = newStock <= 0 || (updatedBoxes.length > 0 && !hasAvailableBoxes);
+
+                    const updatedObj = {
+                        ...currentItem,
+                        stock: newStock,
+                        boxes: updatedBoxes,
+                        variations: updatedVariations,
+                        out_of_stock: isNowOutOfStock
+                    };
+
+                    updatedItemsList[targetIdx] = updatedObj;
+
+                    // Update in Supabase database
+                    if (currentItem.id) {
+                        supabase.from('menu_items').update({
+                            stock: newStock,
+                            boxes: updatedBoxes,
+                            variations: updatedVariations,
+                            out_of_stock: isNowOutOfStock
+                        }).eq('id', currentItem.id).then(({ error }) => {
+                            if (error) console.warn('Notice updating stock/boxes in Supabase:', error.message);
+                        });
+                    }
+                }
+            }
+
+            setItems(updatedItemsList);
+            localStorage.setItem('menuItems', JSON.stringify(updatedItemsList));
+            window.dispatchEvent(new Event('store_data_updated'));
         } catch (err) {
-            console.warn('Failed to save order to localStorage (quota exceeded?):', err);
+            console.error('Error auto-updating inventory stocks/boxes:', err);
         }
 
         // --- PREPARE MESSENGER MSG ---
@@ -711,7 +810,7 @@ Thank you!`;
         }, 1000);
     };
 
-    const formatTime = (timeStr) => {
+    const _formatTime = (timeStr) => {
         if (!timeStr) return '';
         const [hours, minutes] = timeStr.split(':');
         const h = parseInt(hours);
@@ -808,6 +907,24 @@ Thank you!`;
                         <button onClick={nextBanner} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: '50%', padding: '10px', cursor: 'pointer', zIndex: 10 }}><ChevronRight size={24} color="var(--primary)" /></button>
                     </div>
                 </div>
+                
+                {/* Search Bar */}
+                <div className="container" style={{ marginTop: '20px', padding: '0 15px' }}>
+                     <div className="search-bar" style={{ display: 'flex', gap: '10px', maxWidth: '600px', margin: '0 auto', background: 'white', padding: '6px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+                         <input 
+                             type="text" 
+                             placeholder="Search products..." 
+                             value={searchTerm}
+                             onChange={(e) => setSearchTerm(e.target.value)}
+                             style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: 'none', outline: 'none', fontSize: '1rem' }}
+                         />
+                         {searchTerm && (
+                             <button onClick={() => setSearchTerm('')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 10px', color: '#94a3b8' }}>
+                                 <X size={18} />
+                             </button>
+                         )}
+                     </div>
+                </div>
             </section>
 
             {/* ── All Menu Items grouped by Category ── */}
@@ -853,7 +970,10 @@ Thank you!`;
                                 return Boolean(catSlug && itemSlug && catSlug === itemSlug);
                             };
 
-                            const catItems = items.filter(item => isItemInCategory(item, cat));
+                            let catItems = items.filter(item => isItemInCategory(item, cat));
+                            if (searchTerm) {
+                                catItems = catItems.filter(item => (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()));
+                            }
                             if (catItems.length === 0) return null;
                             return (
                                 <div key={cat.id} id={`cat-${cat.id}`}>
@@ -865,66 +985,89 @@ Thank you!`;
 
                                     {/* Items List Format */}
                                     <div className="menu-list-container">
-                                        {catItems.map(item => (
-                                            <div className="menu-item-list-card" key={item.id}
-                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1 }}
-                                            >
-                                                {/* Left Image Thumbnail */}
-                                                <div className="menu-item-list-img-wrapper">
-                                                    <img src={item.image} alt={item.name} className="menu-item-list-img" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
-                                                    {(item.out_of_stock || item.stock === 0) && (
-                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.68)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.62rem', textAlign: 'center', padding: '2px', letterSpacing: '0.3px' }}>
-                                                            OUT OF STOCK
+                                        {catItems.map(item => {
+                                            const availStock = getItemAvailableStock(item);
+                                            const isItemOut = item.out_of_stock || availStock <= 0;
+                                            return (
+                                                <div className="menu-item-list-card" key={item.id}
+                                                    style={{ opacity: isItemOut ? 0.65 : 1, padding: '16px 20px' }}
+                                                >
+                                                    {/* Middle Content */}
+                                                    <div className="menu-item-list-content">
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                            <h3 className="menu-item-list-name">{item.name}</h3>
+                                                            {isItemOut && (
+                                                                <span style={{ background: '#dc2626', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800 }}>
+                                                                    OUT OF STOCK
+                                                                </span>
+                                                            )}
+                                                            {item.min_order_note && (
+                                                                <span style={{ background: 'var(--primary)', color: 'white', padding: '2px 7px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
+                                                                    {item.min_order_note}
+                                                                </span>
+                                                            )}
+                                                            {!isItemOut && availStock <= (item.low_stock_threshold || 5) && (
+                                                                <span style={{ background: '#dc2626', color: 'white', padding: '2px 6px', borderRadius: '12px', fontSize: '0.62rem', fontWeight: 800 }}>
+                                                                    ⚠️ Low Stock
+                                                                </span>
+                                                            )}
                                                         </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Middle Content */}
-                                                <div className="menu-item-list-content">
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                                        <h3 className="menu-item-list-name">{item.name}</h3>
-                                                        {item.min_order_note && (
-                                                            <span style={{ background: 'var(--primary)', color: 'white', padding: '2px 7px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800, lineHeight: 1.2 }}>
-                                                                {item.min_order_note}
-                                                            </span>
-                                                        )}
-                                                        {item.stock !== undefined && item.stock > 0 && item.stock <= (item.low_stock_threshold || 5) && (
-                                                            <span style={{ background: '#dc2626', color: 'white', padding: '2px 6px', borderRadius: '12px', fontSize: '0.62rem', fontWeight: 800 }}>
-                                                                ⚠️ Low Stock
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="menu-item-list-desc">{item.description}</p>
-                                                    {item.stock !== undefined && item.stock > 0 && (
-                                                        <span style={{ fontSize: '0.72rem', color: item.stock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
-                                                            Available Stock: <strong>{item.stock} {item.unit || 'kg'}</strong>
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                {/* Right Price & Add Button */}
-                                                <div className="menu-item-list-right">
-                                                    <div style={{ textAlign: 'right' }}>
-                                                        {item.promo_price ? (
-                                                            <>
-                                                                <div style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.72rem' }}>₱{item.price}</div>
-                                                                <div className="menu-item-list-price" style={{ color: '#dc2626' }}>₱{item.promo_price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
-                                                            </>
-                                                        ) : (
-                                                            <div className="menu-item-list-price">₱{item.price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
+                                                        <p className="menu-item-list-desc">{item.description}</p>
+                                                        {!isItemOut && (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                                                                <span style={{ fontSize: '0.72rem', color: availStock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
+                                                                    Available Stock: <strong>{availStock} {item.unit || 'kg'}</strong>
+                                                                </span>
+                                                                {(() => {
+                                                                    const availBoxes = getItemBoxes(item).filter(b => !b.disabled && !b.ordered);
+                                                                    if (availBoxes.length === 0) return null;
+                                                                    return (
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#047857' }}>📦 Available Boxes:</span>
+                                                                            {availBoxes.map((b, idx) => (
+                                                                                <span key={b.id || idx} style={{
+                                                                                    background: '#ecfdf5',
+                                                                                    border: '1px solid #a7f3d0',
+                                                                                    color: '#065f46',
+                                                                                    padding: '2px 8px',
+                                                                                    borderRadius: '8px',
+                                                                                    fontSize: '0.68rem',
+                                                                                    fontWeight: 700
+                                                                                }}>
+                                                                                    {b.name}: {b.weight} kg {b.stockQty !== undefined && b.stockQty > 1 ? `(${b.stockQty} left)` : ''}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    <button
-                                                        className="btn-success"
-                                                        style={{ padding: '8px 14px', borderRadius: '10px', fontSize: '0.78rem', width: 'auto', minWidth: '100px' }}
-                                                        disabled={item.out_of_stock || item.stock === 0 || !isOpen}
-                                                        onClick={() => openProductSelection(item)}
-                                                    >
-                                                        <Plus size={14} /> Add to Order
-                                                    </button>
+
+                                                    {/* Right Price & Add Button */}
+                                                    <div className="menu-item-list-right">
+                                                        <div style={{ textAlign: 'right' }}>
+                                                            {item.promo_price ? (
+                                                                <>
+                                                                    <div style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '0.72rem' }}>₱{item.price}</div>
+                                                                    <div className="menu-item-list-price" style={{ color: '#dc2626' }}>₱{item.promo_price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
+                                                                </>
+                                                            ) : (
+                                                                <div className="menu-item-list-price">₱{item.price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
+                                                            )}
+                                                        </div>
+                                                        <button
+                                                            className="btn-success"
+                                                            style={{ padding: '8px 14px', borderRadius: '10px', fontSize: '0.78rem', width: 'auto', minWidth: '100px' }}
+                                                            disabled={isItemOut || !isOpen}
+                                                            onClick={() => openProductSelection(item)}
+                                                        >
+                                                            <Plus size={14} /> Add to Order
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
@@ -932,7 +1075,7 @@ Thank you!`;
 
                         {/* Orphan items fallback */}
                         {(() => {
-                            const orphanItems = items.filter(item => {
+                            let orphanItems = items.filter(item => {
                                 const isItemInCategory = (it, category) => {
                                     if (!it || !category) return false;
                                     const itemCat = it.category_id || it.categoryId;
@@ -957,6 +1100,11 @@ Thank you!`;
 
                                 return !categories.some(cat => isItemInCategory(item, cat));
                             });
+                            
+                            if (searchTerm) {
+                                orphanItems = orphanItems.filter(item => (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()));
+                            }
+                            
                             if (orphanItems.length === 0) return null;
                             return (
                                 <div id="cat-other">
@@ -965,42 +1113,71 @@ Thank you!`;
                                         <span className="menu-category-badge">{orphanItems.length} item{orphanItems.length !== 1 ? 's' : ''}</span>
                                     </div>
                                     <div className="menu-list-container">
-                                        {orphanItems.map(item => (
-                                            <div className="menu-item-list-card" key={item.id}
-                                                style={{ opacity: item.out_of_stock || item.stock === 0 ? 0.65 : 1 }}
-                                            >
-                                                <div className="menu-item-list-img-wrapper">
-                                                    <img src={item.image} alt={item.name} className="menu-item-list-img" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
-                                                    {(item.out_of_stock || item.stock === 0) && (
-                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.68)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.62rem', textAlign: 'center', padding: '2px' }}>
-                                                            OUT OF STOCK
+                                        {orphanItems.map(item => {
+                                            const availStock = getItemAvailableStock(item);
+                                            const isItemOut = item.out_of_stock || availStock <= 0;
+                                            return (
+                                                <div className="menu-item-list-card" key={item.id}
+                                                    style={{ opacity: isItemOut ? 0.65 : 1, padding: '16px 20px' }}
+                                                >
+                                                    <div className="menu-item-list-content">
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                            <h3 className="menu-item-list-name">{item.name}</h3>
+                                                            {isItemOut && (
+                                                                <span style={{ background: '#dc2626', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800 }}>
+                                                                    OUT OF STOCK
+                                                                </span>
+                                                            )}
+                                                            {item.min_order_note && (
+                                                                <span style={{ background: 'var(--primary)', color: 'white', padding: '2px 7px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800 }}>
+                                                                    {item.min_order_note}
+                                                                </span>
+                                                            )}
                                                         </div>
-                                                    )}
-                                                </div>
-                                                <div className="menu-item-list-content">
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                                        <h3 className="menu-item-list-name">{item.name}</h3>
-                                                        {item.min_order_note && (
-                                                            <span style={{ background: 'var(--primary)', color: 'white', padding: '2px 7px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: 800 }}>
-                                                                {item.min_order_note}
-                                                            </span>
+                                                        <p className="menu-item-list-desc">{item.description}</p>
+                                                        {!isItemOut && (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                                                                <span style={{ fontSize: '0.72rem', color: availStock <= (item.low_stock_threshold || 5) ? '#dc2626' : '#059669', fontWeight: 700 }}>
+                                                                    Available Stock: <strong>{availStock} {item.unit || 'kg'}</strong>
+                                                                </span>
+                                                                {(() => {
+                                                                    const availBoxes = getItemBoxes(item).filter(b => !b.disabled && !b.ordered);
+                                                                    if (availBoxes.length === 0) return null;
+                                                                    return (
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                                                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#047857' }}>📦 Available Boxes:</span>
+                                                                            {availBoxes.map((b, idx) => (
+                                                                                <span key={b.id || idx} style={{
+                                                                                    background: '#ecfdf5',
+                                                                                    border: '1px solid #a7f3d0',
+                                                                                    color: '#065f46',
+                                                                                    padding: '2px 8px',
+                                                                                    borderRadius: '8px',
+                                                                                    fontSize: '0.68rem',
+                                                                                    fontWeight: 700
+                                                                                }}>
+                                                                                    {b.name}: {b.weight} kg {b.stockQty !== undefined && b.stockQty > 1 ? `(${b.stockQty} left)` : ''}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    <p className="menu-item-list-desc">{item.description}</p>
-                                                </div>
                                                 <div className="menu-item-list-right">
                                                     <div className="menu-item-list-price">₱{item.price} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{item.unit || 'kg'}</span></div>
                                                     <button
                                                         className="btn-success"
                                                         style={{ padding: '8px 14px', borderRadius: '10px', fontSize: '0.78rem', width: 'auto', minWidth: '100px' }}
-                                                        disabled={item.out_of_stock || item.stock === 0 || !isOpen}
+                                                        disabled={isItemOut || !isOpen}
                                                         onClick={() => openProductSelection(item)}
                                                     >
                                                         <Plus size={14} /> Add to Order
                                                     </button>
                                                 </div>
                                             </div>
-                                        ))}
+                                        })}
                                     </div>
                                 </div>
                             );
@@ -1076,7 +1253,6 @@ Thank you!`;
                         <button onClick={() => setSelectedProduct(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={20} color="#475569" /></button>
                         
                         <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'center' }}>
-                            <img src={selectedProduct.image} style={{ width: '90px', height: '90px', borderRadius: '16px', objectFit: 'cover', border: '1px solid #e2e8f0' }} alt={selectedProduct.name} onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80'; }} />
                             <div>
                                 <h2 style={{ margin: 0, fontSize: '1.35rem', color: '#0f172a', fontWeight: 800 }}>{selectedProduct.name}</h2>
                                 <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0' }}>{selectedProduct.description}</p>
@@ -1086,7 +1262,7 @@ Thank you!`;
                                     </span>
                                     {selectedProduct.stock !== undefined && (
                                         <span style={{ fontSize: '0.78rem', color: '#059669', fontWeight: 700 }}>
-                                            Available Stock: {selectedProduct.stock} kg
+                                            Available Stock: {getItemAvailableStock(selectedProduct)} kg
                                         </span>
                                     )}
                                 </div>
@@ -1096,64 +1272,56 @@ Thank you!`;
                         {/* Available Box Stock Weights Section */}
                         {getItemBoxes(selectedProduct).length > 0 && (
                             <div style={{ marginBottom: '22px' }}>
-                                <div style={{
-                                    background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
-                                    border: '1.5px solid #a7f3d0',
-                                    borderRadius: '16px',
-                                    padding: '14px 16px',
-                                    marginBottom: '16px',
-                                    display: 'flex',
-                                    gap: '12px',
-                                    alignItems: 'center'
-                                }}>
-                                    <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>📦</span>
-                                    <div>
-                                        <h4 style={{ margin: 0, fontWeight: 800, fontSize: '0.92rem', color: '#065f46' }}>
-                                            Pumili ng Timbang ng Box (Available Stocks)
-                                        </h4>
-                                        <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#047857', lineHeight: 1.35 }}>
-                                            Kabuuang Stock: <strong>{selectedProduct.stock} kg</strong> — Piliin ang kahon (Box 1, Box 2, Box 3) na nais kunin.
-                                        </p>
-                                    </div>
-                                </div>
 
                                 <label style={{ fontWeight: 800, display: 'block', marginBottom: '10px', fontSize: '0.9rem', color: '#1e293b' }}>
                                     Mga Available na Kahon (Box Options):
                                 </label>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                                     {getItemBoxes(selectedProduct).map(b => {
-                                        const isSelected = selectionOptions.box?.id === b.id || selectionOptions.box?.name === b.name;
-                                        const pricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
-                                        const computedBoxPrice = (b.weight * pricePerKg).toFixed(2);
+                                        const isSold = Boolean(b.disabled || b.ordered);
+                                        const isSelected = (selectionOptions.box?.id === b.id || selectionOptions.box?.name === b.name) && !isSold;
+                                        const itemPricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
+                                        const boxPKg = (b.pricePerKg !== undefined && b.pricePerKg !== '') ? Number(b.pricePerKg) : itemPricePerKg;
+                                        const computedBoxPrice = (b.price !== undefined && b.price !== null && b.price !== '') 
+                                            ? Number(b.price) 
+                                            : (b.weight * boxPKg);
 
                                         return (
                                             <button
                                                 key={b.id || b.name}
-                                                disabled={b.disabled}
+                                                disabled={isSold}
                                                 type="button"
-                                                onClick={() => setSelectionOptions({ ...selectionOptions, box: b })}
+                                                onClick={() => {
+                                                    if (!isSold) setSelectionOptions({ ...selectionOptions, box: b });
+                                                }}
                                                 style={{
                                                     padding: '12px 14px',
                                                     borderRadius: '14px',
-                                                    border: isSelected ? '2px solid #059669' : '1.5px solid #cbd5e1',
-                                                    background: isSelected ? '#f0fdf4' : 'white',
-                                                    color: isSelected ? '#065f46' : '#334155',
-                                                    cursor: b.disabled ? 'not-allowed' : 'pointer',
-                                                    opacity: b.disabled ? 0.4 : 1,
+                                                    border: isSold ? '1.5px dashed #fca5a5' : isSelected ? '2px solid #059669' : '1.5px solid #cbd5e1',
+                                                    background: isSold ? '#fef2f2' : isSelected ? '#f0fdf4' : 'white',
+                                                    color: isSold ? '#991b1b' : isSelected ? '#065f46' : '#334155',
+                                                    cursor: isSold ? 'not-allowed' : 'pointer',
+                                                    opacity: isSold ? 0.65 : 1,
                                                     textAlign: 'left',
                                                     transition: 'all 0.2s ease',
                                                     boxShadow: isSelected ? '0 4px 12px rgba(5, 150, 105, 0.15)' : 'none'
                                                 }}
                                             >
-                                                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: isSelected ? '#059669' : '#0f172a' }}>
+                                                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: isSold ? '#991b1b' : isSelected ? '#059669' : '#0f172a' }}>
                                                     {b.name}
                                                 </div>
-                                                <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '2px', fontWeight: 700 }}>
+                                                <div style={{ fontSize: '0.82rem', color: isSold ? '#7f1d1d' : '#475569', marginTop: '2px', fontWeight: 700 }}>
                                                     ⚖️ {b.weight} kg
                                                 </div>
-                                                <div style={{ fontSize: '0.78rem', color: '#059669', marginTop: '4px', fontWeight: 800 }}>
-                                                    ₱{Number(computedBoxPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                                </div>
+                                                {isSold ? (
+                                                    <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '4px', fontWeight: 900 }}>
+                                                        ❌ NA-ORDER NA
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ fontSize: '0.78rem', color: '#059669', marginTop: '4px', fontWeight: 800 }}>
+                                                        ₱{Number(computedBoxPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </div>
+                                                )}
                                             </button>
                                         );
                                     })}
@@ -1185,18 +1353,28 @@ Thank you!`;
                                             <div>
                                                 <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Presyo Bawat Kilo</div>
                                                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#F9B700' }}>
-                                                    ₱{Number(selectedProduct.promo_price || selectedProduct.price).toFixed(2)} / kg
+                                                    ₱{((selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : Number(selectedProduct.promo_price || selectedProduct.price)).toFixed(2)} / kg
                                                 </div>
                                             </div>
                                             <div>
                                                 <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Kabuuan (Total Price)</div>
                                                 <div style={{ fontWeight: 900, fontSize: '1.15rem', color: '#4ade80' }}>
-                                                    ₱{(selectionOptions.box.weight * Number(selectedProduct.promo_price || selectedProduct.price)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    ₱{(() => {
+                                                        if (selectionOptions.box.price !== undefined && selectionOptions.box.price !== null && selectionOptions.box.price !== '') return Number(selectionOptions.box.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                                        const bpkg = (selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : Number(selectedProduct.promo_price || selectedProduct.price);
+                                                        return (selectionOptions.box.weight * bpkg).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
                                         <div style={{ fontSize: '0.78rem', color: '#cbd5e1', fontStyle: 'italic', textAlign: 'center' }}>
-                                            Kalkulasyon: {selectionOptions.box.weight} kg × ₱{Number(selectedProduct.promo_price || selectedProduct.price).toFixed(2)} = ₱{(selectionOptions.box.weight * Number(selectedProduct.promo_price || selectedProduct.price)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {(() => {
+                                                const bpkg = (selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : Number(selectedProduct.promo_price || selectedProduct.price);
+                                                if (selectionOptions.box.price !== undefined && selectionOptions.box.price !== null && selectionOptions.box.price !== '') {
+                                                    return `Presyo: ₱${Number(selectionOptions.box.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                                }
+                                                return `Kalkulasyon: ${selectionOptions.box.weight} kg × ₱${bpkg.toFixed(2)} = ₱${(selectionOptions.box.weight * bpkg).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                            })()}
                                         </div>
                                     </div>
                                 )}
@@ -1293,13 +1471,18 @@ Thank you!`;
 
                         <button className="btn-primary" style={{ width: '100%', padding: '16px', fontWeight: 800, fontSize: '1.1rem', borderRadius: '14px', background: 'var(--primary)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => addToCart(selectedProduct, selectionOptions)}>
                             <Plus size={18} /> Add to Cart — ₱{(() => {
-                                const pricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
-                                let base = pricePerKg;
+                                const itemPricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
+                                let base = itemPricePerKg;
                                 if (selectionOptions.box) {
-                                    base = selectionOptions.box.weight * pricePerKg;
+                                    if (selectionOptions.box.price !== undefined && selectionOptions.box.price !== null && selectionOptions.box.price !== '') {
+                                        base = Number(selectionOptions.box.price);
+                                    } else {
+                                        const bpkg = (selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : itemPricePerKg;
+                                        base = selectionOptions.box.weight * bpkg;
+                                    }
                                 } else if (selectionOptions.variation && Number(selectionOptions.variation.price) > 0) {
                                     base = selectedProduct.name?.toLowerCase().includes('pork ribs')
-                                        ? pricePerKg + Number(selectionOptions.variation.price)
+                                        ? itemPricePerKg + Number(selectionOptions.variation.price)
                                         : Number(selectionOptions.variation.price);
                                 }
                                 const addons = (selectionOptions.addons || []).reduce((sum, a) => sum + Number(a.price), 0);
@@ -1318,96 +1501,6 @@ Thank you!`;
                         <h2 style={{ marginBottom: '30px', fontSize: '1.8rem', color: 'var(--primary)' }}>Checkout</h2>
 
                         <div style={{ marginBottom: '30px' }}>
-                            {/* Payment Method */}
-                            <div style={{ marginBottom: '30px' }}>
-                                <label style={{ fontWeight: 700, fontSize: '1rem', display: 'block', marginBottom: '15px' }}>Payment Method</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                                    {paymentSettings.map(method => {
-                                        const isCash = (name => {
-                                            if (!name) return false;
-                                            const lower = name.toLowerCase().trim();
-                                            if (lower.includes('gcash')) return false;
-                                            return lower.includes('cash') || lower.includes('cod');
-                                        })(method.name);
-                                        return (
-                                            <button
-                                                key={method.id}
-                                                onClick={() => setPaymentMethod(method.id)}
-                                                style={{
-                                                    padding: '15px', borderRadius: '15px', border: '2px solid',
-                                                    borderColor: paymentMethod === method.id ? 'var(--primary)' : '#e2e8f0',
-                                                    background: paymentMethod === method.id ? '#f0f9ff' : 'white',
-                                                    cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
-                                                    display: 'flex',
-                                                    flexDirection: 'column',
-                                                    alignItems: 'center'
-                                                }}
-                                            >
-                                                <div style={{ marginBottom: '8px', color: 'var(--primary)' }}>{isCash ? <Banknote size={24} /> : <CreditCard size={24} />}</div>
-                                                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)' }}>{method.name}</div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                {/* Payment Details Area */}
-                                {paymentMethod && (() => {
-                                    const method = paymentSettings.find(m => m.id === paymentMethod);
-                                    if (!method) return null;
-                                    const isCash = (name => {
-                                        if (!name) return false;
-                                        const lower = name.toLowerCase().trim();
-                                        if (lower.includes('gcash')) return false;
-                                        return lower.includes('cash') || lower.includes('cod');
-                                    })(method.name);
-                                    if (isCash) {
-                                        return (
-                                            <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '20px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
-                                                <Banknote size={32} style={{ color: '#059669', marginBottom: '10px' }} />
-                                                <h4 style={{ color: '#059669', marginBottom: '8px' }}>Cash Payment</h4>
-                                                <p style={{ color: '#065f46', fontSize: '0.9rem' }}>Please prepare exact amount. Payment will be collected upon {orderType === 'delivery' ? 'delivery' : 'pickup'}.</p>
-                                            </div>
-                                        );
-                                    }
-                                    const qrCodeImage = method.qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(method.name + ': ' + (method.account_number || method.accountNumber || '09947246294'))}`;
-                                    return (
-                                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <h4 style={{ color: 'var(--primary)', marginBottom: '14px', fontSize: '1.1rem', fontWeight: 800 }}>Send {method.name} Payment</h4>
-                                                <div style={{ background: 'white', padding: '15px', borderRadius: '16px', display: 'inline-block', marginBottom: '16px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
-                                                    <img src={qrCodeImage} style={{ width: '200px', height: '200px', borderRadius: '12px', objectFit: 'contain', display: 'block' }} alt={`${method.name} QR Code`} />
-                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary)', marginTop: '8px' }}>
-                                                        📷 Scan QR Code to Pay via {method.name}
-                                                    </div>
-                                                </div>
-                                                <div style={{ background: 'white', padding: '15px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 600 }}>Account Number</div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
-                                                        <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>{method.account_number || method.accountNumber || '09947246294'}</div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                const accNum = method.account_number || method.accountNumber || '09947246294';
-                                                                navigator.clipboard.writeText(accNum);
-                                                                alert('✓ Account number copied: ' + accNum);
-                                                            }}
-                                                            style={{ border: 'none', background: 'var(--primary)', color: 'white', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 700, fontSize: '0.8rem' }}
-                                                        >
-                                                            <Copy size={14} /> Copy
-                                                        </button>
-                                                    </div>
-                                                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#334155' }}>Account Name: {method.account_name || method.accountName || 'Chilled and Frozen Hub'}</div>
-                                                    {method.instructions && (
-                                                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px', fontStyle: 'italic' }}>
-                                                            {method.instructions}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
 
                             {/* Order Type & Form here */}
                             <div style={{ marginBottom: '25px' }}>
@@ -1571,6 +1664,97 @@ Thank you!`;
                                 </div>
                             )}
 
+                            {/* Payment Method */}
+                            <div style={{ marginBottom: '30px' }}>
+                                <label style={{ fontWeight: 700, fontSize: '1rem', display: 'block', marginBottom: '15px' }}>Payment Method</label>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                                    {paymentSettings.map(method => {
+                                        const isCash = (name => {
+                                            if (!name) return false;
+                                            const lower = name.toLowerCase().trim();
+                                            if (lower.includes('gcash')) return false;
+                                            return lower.includes('cash') || lower.includes('cod');
+                                        })(method.name);
+                                        return (
+                                            <button
+                                                key={method.id}
+                                                onClick={() => setPaymentMethod(method.id)}
+                                                style={{
+                                                    padding: '15px', borderRadius: '15px', border: '2px solid',
+                                                    borderColor: paymentMethod === method.id ? 'var(--primary)' : '#e2e8f0',
+                                                    background: paymentMethod === method.id ? '#f0f9ff' : 'white',
+                                                    cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center'
+                                                }}
+                                            >
+                                                <div style={{ marginBottom: '8px', color: 'var(--primary)' }}>{isCash ? <Banknote size={24} /> : <CreditCard size={24} />}</div>
+                                                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)' }}>{method.name}</div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Payment Details Area */}
+                                {paymentMethod && (() => {
+                                    const method = paymentSettings.find(m => m.id === paymentMethod);
+                                    if (!method) return null;
+                                    const isCash = (name => {
+                                        if (!name) return false;
+                                        const lower = name.toLowerCase().trim();
+                                        if (lower.includes('gcash')) return false;
+                                        return lower.includes('cash') || lower.includes('cod');
+                                    })(method.name);
+                                    if (isCash) {
+                                        return (
+                                            <div style={{ background: '#f0fdf4', padding: '20px', borderRadius: '20px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
+                                                <Banknote size={32} style={{ color: '#059669', marginBottom: '10px' }} />
+                                                <h4 style={{ color: '#059669', marginBottom: '8px' }}>Cash Payment</h4>
+                                                <p style={{ color: '#065f46', fontSize: '0.9rem' }}>Please prepare exact amount. Payment will be collected upon {orderType === 'delivery' ? 'delivery' : 'pickup'}.</p>
+                                            </div>
+                                        );
+                                    }
+                                    const qrCodeImage = method.qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(method.name + ': ' + (method.account_number || method.accountNumber || '09947246294'))}`;
+                                    return (
+                                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                                            <div style={{ textAlign: 'center' }}>
+                                                <h4 style={{ color: 'var(--primary)', marginBottom: '14px', fontSize: '1.1rem', fontWeight: 800 }}>Send {method.name} Payment</h4>
+                                                <div style={{ background: 'white', padding: '15px', borderRadius: '16px', display: 'inline-block', marginBottom: '16px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
+                                                    <img src={qrCodeImage} style={{ width: '200px', height: '200px', borderRadius: '12px', objectFit: 'contain', display: 'block' }} alt={`${method.name} QR Code`} />
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary)', marginTop: '8px' }}>
+                                                        📷 Scan QR Code to Pay via {method.name}
+                                                    </div>
+                                                </div>
+                                                <div style={{ background: 'white', padding: '15px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 600 }}>Account Number</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
+                                                        <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>{method.account_number || method.accountNumber || '09947246294'}</div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const accNum = method.account_number || method.accountNumber || '09947246294';
+                                                                navigator.clipboard.writeText(accNum);
+                                                                alert('✓ Account number copied: ' + accNum);
+                                                            }}
+                                                            style={{ border: 'none', background: 'var(--primary)', color: 'white', borderRadius: '8px', padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 700, fontSize: '0.8rem' }}
+                                                        >
+                                                            <Copy size={14} /> Copy
+                                                        </button>
+                                                    </div>
+                                                    <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#334155' }}>Account Name: {method.account_name || method.accountName || 'Chilled and Frozen Hub'}</div>
+                                                    {method.instructions && (
+                                                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px', fontStyle: 'italic' }}>
+                                                            {method.instructions}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
                             {/* Order Total Breakdown */}
                             <div style={{ marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: orderType === 'delivery' && deliveryCharge > 0 ? '10px' : '0' }}>
@@ -1591,45 +1775,9 @@ Thank you!`;
                                 </div>
                             </div>
 
-                            {/* Copy Order Button - Required before proceeding */}
-                            <button
-                                className="btn-primary"
-                                onClick={copyOrderDetails}
-                                style={{
-                                    width: '100%',
-                                    padding: '15px',
-                                    borderRadius: '15px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '10px',
-                                    fontWeight: 700,
-                                    fontSize: '1rem',
-                                    marginBottom: '15px',
-                                    background: orderCopied ? '#059669' : '#7c3aed',
-                                    border: 'none',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                <Copy size={20} /> {orderCopied ? '✓ Order Copied!' : 'Copy Order Details'}
-                            </button>
-
-                            {!orderCopied && (
-                                <p style={{
-                                    textAlign: 'center',
-                                    fontSize: '0.85rem',
-                                    color: '#dc2626',
-                                    marginBottom: '15px',
-                                    fontWeight: 600
-                                }}>
-                                    ⚠ Please copy your order details first
-                                </p>
-                            )}
-
                             <button
                                 className="btn-accent"
                                 onClick={handlePlaceOrder}
-                                disabled={!orderCopied}
                                 style={{
                                     width: '100%',
                                     padding: '18px',
@@ -1640,8 +1788,7 @@ Thank you!`;
                                     gap: '10px',
                                     fontWeight: 800,
                                     fontSize: '1.1rem',
-                                    opacity: orderCopied ? 1 : 0.5,
-                                    cursor: orderCopied ? 'pointer' : 'not-allowed'
+                                    cursor: 'pointer'
                                 }}
                             >
                                 <MessageSquare size={22} /> Confirm Order

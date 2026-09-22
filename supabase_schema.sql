@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
     out_of_stock BOOLEAN DEFAULT FALSE,
     sort_order INTEGER DEFAULT 0,
     variations JSONB DEFAULT '[]', -- [{name, price, disabled}]
+    boxes JSONB DEFAULT '[]',      -- [{id, name, weight, disabled, ordered}]
     flavors JSONB DEFAULT '[]',    -- [{name, disabled}] or [string]
     addons JSONB DEFAULT '[]',      -- [{name, price, disabled}]
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -209,6 +210,9 @@ UPDATE categories SET sort_order = 7 WHERE name LIKE 'Rice%';
 -- Add instructions column to payment_settings (if upgrading from older schema)
 ALTER TABLE payment_settings ADD COLUMN IF NOT EXISTS instructions TEXT;
 
+-- Add boxes column to menu_items (if upgrading from older schema)
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS boxes JSONB DEFAULT '[]';
+
 -- Add delivery_locations table (if upgrading from older schema)
 CREATE TABLE IF NOT EXISTS delivery_locations (
     id TEXT PRIMARY KEY,
@@ -268,30 +272,6 @@ SELECT cron.schedule(
 SELECT cron.schedule(
     'reset-store-status-to-auto',
     '0 0 * * *',
-    -- CREATE TABLE FOR SUPPLIERS MANAGEMENT
-CREATE TABLE IF NOT EXISTS suppliers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    contact_person VARCHAR(255),
-    phone VARCHAR(100),
-    email VARCHAR(255),
-    address TEXT,
-    notes TEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    $$ UPDATE store_settings SET manual_status = 'auto'; $$
 );
-
--- RLS Policies
-ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public Read Access Suppliers" ON suppliers;
-CREATE POLICY "Public Read Access Suppliers" ON suppliers FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Public Full Access Suppliers" ON suppliers;
-CREATE POLICY "Public Full Access Suppliers" ON suppliers FOR ALL USING (true);
-
--- Insert Default Suppliers
-INSERT INTO suppliers (name, contact_person, phone, email, address, notes) VALUES
-('St. Helens Meat Products', 'John Miller', '09171234567', 'sales@sthelens.com', 'Pasig City, Metro Manila', 'High-end beef slab supplier'),
-('Seara Poultry Philippines', 'Maria Santos', '09189876543', 'orders@seara.ph', 'Quezon City, Metro Manila', 'Wholesale chicken & wings'),
-('Excel Choice Beef Co.', 'Robert Tan', '09223334444', 'excelbeef@gmail.com', 'Valenzuela City', 'Choice Grade Beef Ribeye & Cuts')
-ON CONFLICT DO NOTHING;
 

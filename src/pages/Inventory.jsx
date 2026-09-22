@@ -11,43 +11,60 @@ import { supabase } from '../supabaseClient';
 import { categories as initialCategories, menuItems as initialItems } from '../data/MenuData';
 import './Inventory.css';
 
-const DEFAULT_SUPPLIERS = [
-  {
-    id: 'supp_1',
-    name: 'St. Helens Meat Products',
-    contact_person: 'John Miller',
-    phone: '09171234567',
-    email: 'sales@sthelens.com',
-    address: 'Pasig City, Metro Manila',
-    notes: 'High-end beef slab supplier (Shortloin, Ribeye, Wagyu)',
-    is_active: true
-  },
-  {
-    id: 'supp_2',
-    name: 'Seara Poultry Philippines',
-    contact_person: 'Maria Santos',
-    phone: '09189876543',
-    email: 'orders@seara.ph',
-    address: 'Quezon City, Metro Manila',
-    notes: 'Wholesale chicken, wings, & cuts supplier',
-    is_active: true
-  },
-  {
-    id: 'supp_3',
-    name: 'Excel Choice Beef Co.',
-    contact_person: 'Robert Tan',
-    phone: '09223334444',
-    email: 'excelbeef@gmail.com',
-    address: 'Valenzuela City',
-    notes: 'Choice Grade Beef Ribeye & Cuts',
-    is_active: true
+const getItemBoxes = (item) => {
+  if (!item) return [];
+  const totalStock = parseFloat(item.stock) || 0;
+  const isOutOfStock = Boolean(item.out_of_stock || totalStock <= 0);
+
+  if (Array.isArray(item.boxes) && item.boxes.length > 0) {
+    return item.boxes.map(b => ({
+      ...b,
+      disabled: isOutOfStock || Boolean(b.disabled || b.ordered) || (b.weight && b.weight > totalStock)
+    }));
   }
-];
+
+  if (Array.isArray(item.variations) && item.variations.length > 0) {
+    const hasBoxes = item.variations.some(v => v.weight || (v.name && (v.name.toLowerCase().includes('box') || v.name.toLowerCase().includes('slab') || v.name.toLowerCase().includes('sack') || v.name.toLowerCase().includes('pack'))));
+    if (hasBoxes) {
+      return item.variations.map((v, idx) => {
+        const wt = v.weight || parseFloat(v.name.replace(/[^0-9.]/g, '')) || 25;
+        return {
+          id: v.id || `box-${idx + 1}`,
+          name: v.name,
+          weight: wt,
+          disabled: isOutOfStock || Boolean(v.disabled || v.ordered) || wt > totalStock
+        };
+      });
+    }
+  }
+
+  if (totalStock > 0 && !isOutOfStock) {
+    const unitName = (item.unit || 'kg').toLowerCase();
+    const prefix = (unitName === 'slab') ? 'Slab' : (unitName === 'sack') ? 'Sack' : (unitName === 'pack') ? 'Pack' : 'Box';
+    
+    if (unitName === 'sack' || unitName === 'pack') {
+      return [
+        { id: 'box-1', name: `${prefix} 1`, weight: 25, disabled: 25 > totalStock },
+        { id: 'box-2', name: `${prefix} 2`, weight: 25, disabled: 25 > totalStock },
+        { id: 'box-3', name: `${prefix} 3`, weight: 25, disabled: 25 > totalStock }
+      ];
+    }
+
+    const box1Weight = Number((totalStock * 0.3302).toFixed(3));
+    const box2Weight = Number((totalStock * 0.3261).toFixed(3));
+    const box3Weight = Number((totalStock - box1Weight - box2Weight).toFixed(3));
+    return [
+      { id: 'box-1', name: `${prefix} 1`, weight: box1Weight, disabled: box1Weight <= 0 || box1Weight > totalStock },
+      { id: 'box-2', name: `${prefix} 2`, weight: box2Weight, disabled: box2Weight <= 0 || box2Weight > totalStock },
+      { id: 'box-3', name: `${prefix} 3`, weight: box3Weight, disabled: box3Weight <= 0 || box3Weight > totalStock }
+    ].filter(b => b.weight > 0);
+  }
+  return [];
+};
 
 const Inventory = () => {
-  const [activeTab, setActiveTab] = useState('Mga Batch'); // 'Mga Batch' | 'Summary ng Stock' | 'Buong Rekord' | 'Mga Supplier'
+  const [_activeTab, _setActiveTab] = useState('Mga Batch'); // 'Mga Batch' | 'Summary ng Stock' | 'Buong Rekord'
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSupplier, setSelectedSupplier] = useState('Lahat ng supplier');
   const [activeFilter, setActiveFilter] = useState('Lahat');
   const [sortBy, setSortBy] = useState('name'); // 'name' | 'stock_desc' | 'stock_asc' | 'price_desc'
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
@@ -57,11 +74,6 @@ const Inventory = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
-  // Supplier State & Modals
-  const [suppliersList, setSuppliersList] = useState([]);
-  const [showSupplierModal, setShowSupplierModal] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState(null);
-
   const [message, setMessage] = useState('');
   const [allItems, setAllItems] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -69,7 +81,6 @@ const Inventory = () => {
 
   useEffect(() => {
     fetchData();
-    fetchSuppliers();
   }, []);
 
   const fetchData = async () => {
@@ -88,7 +99,7 @@ const Inventory = () => {
       const savedRaw = localStorage.getItem('menuItems');
       let savedItems = [];
       if (savedRaw) {
-        try { savedItems = JSON.parse(savedRaw); } catch (e) {}
+        try { savedItems = JSON.parse(savedRaw); } catch { /* ignore */ }
       }
 
       // Merge Supabase items, LocalStorage items, and default MenuData catalog items
@@ -118,7 +129,17 @@ const Inventory = () => {
 
       const fetchedItems = Array.from(combinedItemsMap.values());
       setAllItems(fetchedItems);
-      setCategories(categoriesData && categoriesData.length > 0 ? categoriesData : initialCategories);
+      const sourceCats = categoriesData && categoriesData.length > 0 ? categoriesData : initialCategories;
+      const uniqueCategories = [];
+      const seenCategoryNames = new Set();
+      sourceCats.forEach(cat => {
+        const catName = (cat.name || '').trim().toLowerCase();
+        if (!seenCategoryNames.has(catName)) {
+          seenCategoryNames.add(catName);
+          uniqueCategories.push(cat);
+        }
+      });
+      setCategories(uniqueCategories);
       
       // Initialize local stock state
       const initialStock = {};
@@ -245,18 +266,11 @@ const Inventory = () => {
 
   const stats = calculateStats(allItems);
 
-  // Combine default and dynamic suppliers
-  const supplierOptions = ['Lahat ng supplier', ...new Set([
-    ...suppliersList.map(s => s.name),
-    ...allItems.map(item => item.description || '').filter(Boolean)
-  ])];
-
   // Filtered & Sorted items
   const getFilteredItems = () => {
     let result = allItems.filter(item => {
       const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             (item.description && item.description.toLowerCase().includes(searchTerm.toLowerCase()));
-      const matchesSupplier = selectedSupplier === 'Lahat ng supplier' || item.description?.includes(selectedSupplier);
       
       const currentStock = localStockState[item.id]?.stock ?? item.stock ?? 0;
       const threshold = item.low_stock_threshold || 5;
@@ -270,7 +284,7 @@ const Inventory = () => {
         matchesFilter = currentStock === 0 || item.out_of_stock;
       }
       
-      return matchesSearch && matchesSupplier && matchesFilter;
+      return matchesSearch && matchesFilter;
     });
 
     // Apply sorting
@@ -310,7 +324,7 @@ const Inventory = () => {
   const storageData = calculateStorageTotals();
 
   // Category Summaries Calculation
-  const categorySummaries = categories.map(cat => {
+  const _categorySummaries = categories.map(cat => {
     const catItems = allItems.filter(i => i.category_id === cat.id);
     const catStock = catItems.reduce((sum, i) => sum + (localStockState[i.id]?.stock ?? i.stock ?? 0), 0);
     const catValue = catItems.reduce((sum, i) => {
@@ -442,65 +456,6 @@ const Inventory = () => {
     }
   };
 
-  // Supplier Management Handlers
-  const handleSaveSupplier = async (supplierData) => {
-    try {
-      let saved;
-      if (editingSupplier) {
-        const { data, error } = await supabase
-          .from('suppliers')
-          .update(supplierData)
-          .eq('id', editingSupplier.id)
-          .select()
-          .single();
-
-        if (error) throw error;
-        saved = data || { ...editingSupplier, ...supplierData };
-        const updated = suppliersList.map(s => s.id === editingSupplier.id ? saved : s);
-        setSuppliersList(updated);
-        localStorage.setItem('suppliersList', JSON.stringify(updated));
-        showMessage('✓ Supplier details updated!');
-      } else {
-        const { data, error } = await supabase
-          .from('suppliers')
-          .insert([supplierData])
-          .select()
-          .single();
-
-        if (error) throw error;
-        saved = data || { ...supplierData, id: 'supp_' + Date.now() };
-        const updated = [saved, ...suppliersList];
-        setSuppliersList(updated);
-        localStorage.setItem('suppliersList', JSON.stringify(updated));
-        showMessage('✓ Bagong Supplier naidagdag!');
-      }
-    } catch (err) {
-      console.error('Save supplier error:', err);
-      const fallback = { ...(editingSupplier || supplierData), id: editingSupplier?.id || 'supp_' + Date.now() };
-      const updated = editingSupplier 
-        ? suppliersList.map(s => s.id === editingSupplier.id ? fallback : s)
-        : [fallback, ...suppliersList];
-      setSuppliersList(updated);
-      localStorage.setItem('suppliersList', JSON.stringify(updated));
-      showMessage('✓ Supplier saved (Local Mode)');
-    }
-    setShowSupplierModal(false);
-    setEditingSupplier(null);
-  };
-
-  const handleDeleteSupplier = async (supplier) => {
-    if (!window.confirm(`Sigurado ka bang gustong burahin si "${supplier.name}" sa listahan ng suppliers?`)) return;
-    try {
-      const { error } = await supabase.from('suppliers').delete().eq('id', supplier.id);
-      if (error) throw error;
-    } catch (err) {
-      console.log('Delete notice:', err);
-    }
-    const updated = suppliersList.filter(s => s.id !== supplier.id);
-    setSuppliersList(updated);
-    localStorage.setItem('suppliersList', JSON.stringify(updated));
-    showMessage(`✓ "${supplier.name}" removed from suppliers list.`);
-  };
 
   const handleExportExcel = () => {
     const csv = [
@@ -581,7 +536,7 @@ const Inventory = () => {
       </div>
 
       {/* KPI Storage Dashboard Cards */}
-      <div className="kpi-grid">
+      <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <div className="kpi-card">
           <div className="kpi-card-header">
             <span className="kpi-label">Lahat ng Storage</span>
@@ -620,65 +575,19 @@ const Inventory = () => {
             <span className="kpi-trend amber">40% Display</span> Ready for Checkout
           </div>
         </div>
-
-        <div className="kpi-card">
-          <div className="kpi-card-header">
-            <span className="kpi-label">Registered Suppliers</span>
-            <div className="kpi-icon-box alert" style={{ background: '#f0fdf4', color: '#0c250d' }}>
-              <Truck size={22} color="#0c250d" />
-            </div>
-          </div>
-          <div className="kpi-value" style={{ color: '#0c250d' }}>
-            {suppliersList.length} <span style={{ fontSize: '1.1rem', color: '#64748b' }}>vendors</span>
-          </div>
-          <div className="kpi-footer">
-            <span className="kpi-trend green">{suppliersList.filter(s => s.is_active !== false).length} Active</span>
-            <span className="kpi-trend amber" style={{ marginLeft: '4px' }}>Partner Vendors</span>
-          </div>
-        </div>
       </div>
 
       {/* Navigation Toolbar */}
       <div className="inventory-toolbar">
         <div className="toolbar-top">
-          {/* Main Navigation Tabs */}
-          <div className="nav-tabs-pills">
-            <button
-              className={`tab-pill ${activeTab === 'Mga Batch' ? 'active' : ''}`}
-              onClick={() => setActiveTab('Mga Batch')}
-            >
-              Mga Batch
-            </button>
-            <button
-              className={`tab-pill ${activeTab === 'Summary ng Stock' ? 'active' : ''}`}
-              onClick={() => setActiveTab('Summary ng Stock')}
-            >
-              Summary ng Stock
-            </button>
-            <button
-              className={`tab-pill ${activeTab === 'Buong Rekord' ? 'active' : ''}`}
-              onClick={() => setActiveTab('Buong Rekord')}
-            >
-              Buong Rekord
-            </button>
-            <button
-              className={`tab-pill ${activeTab === 'Mga Supplier' ? 'active' : ''}`}
-              onClick={() => setActiveTab('Mga Supplier')}
-            >
-              🚚 Mga Supplier ({suppliersList.length})
-            </button>
+          <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0c250d', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Package size={20} color="#0c250d" /> Inventory Items & Stock Control
           </div>
 
           <div className="toolbar-actions">
-            {activeTab === 'Mga Supplier' ? (
-              <button className="btn-tool primary" onClick={() => { setEditingSupplier(null); setShowSupplierModal(true); }}>
-                <Plus size={16} /> Magdagdag ng Supplier
-              </button>
-            ) : (
-              <button className="btn-tool primary" onClick={handleNewEntry}>
-                <Plus size={16} /> Pasok / Bagong Batch
-              </button>
-            )}
+            <button className="btn-tool primary" onClick={handleNewEntry}>
+              <Plus size={16} /> Pasok / Bagong Batch
+            </button>
             <button className="btn-tool" onClick={handleExportExcel}>
               <FileSpreadsheet size={16} color="#059669" /> Export Excel
             </button>
@@ -688,101 +597,71 @@ const Inventory = () => {
           </div>
         </div>
 
-        {/* Filters bar for Mga Batch and Buong Rekord */}
-        {activeTab !== 'Summary ng Stock' && activeTab !== 'Mga Supplier' && (
-          <div className="toolbar-bottom">
-            {/* Status Filters */}
-            <div className="status-filter-group">
-              <button 
-                className={`filter-chip ${activeFilter === 'Lahat' ? 'active' : ''}`}
-                onClick={() => setActiveFilter('Lahat')}
-              >
-                Lahat ({stats.all})
-              </button>
-              <button 
-                className={`filter-chip chip-ok ${activeFilter === 'OK' ? 'active' : ''}`}
-                onClick={() => setActiveFilter('OK')}
-              >
-                🟢 OK ({stats.ok})
-              </button>
-              <button 
-                className={`filter-chip chip-low ${activeFilter === 'Paubos' ? 'active' : ''}`}
-                onClick={() => setActiveFilter('Paubos')}
-              >
-                🟡 Paubos ({stats.low})
-              </button>
-              <button 
-                className={`filter-chip chip-out ${activeFilter === 'Ubos' ? 'active' : ''}`}
-                onClick={() => setActiveFilter('Ubos')}
-              >
-                🔴 Ubos ({stats.out})
-              </button>
+        <div className="toolbar-bottom">
+          {/* Status Filters */}
+          <div className="status-filter-group">
+            <button 
+              className={`filter-chip ${activeFilter === 'Lahat' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('Lahat')}
+            >
+              Lahat ({stats.all})
+            </button>
+            <button 
+              className={`filter-chip chip-ok ${activeFilter === 'OK' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('OK')}
+            >
+              🟢 OK ({stats.ok})
+            </button>
+            <button 
+              className={`filter-chip chip-low ${activeFilter === 'Paubos' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('Paubos')}
+            >
+              🟡 Paubos ({stats.low})
+            </button>
+            <button 
+              className={`filter-chip chip-out ${activeFilter === 'Ubos' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('Ubos')}
+            >
+              🔴 Ubos ({stats.out})
+            </button>
+          </div>
+
+          <div className="search-supplier-wrapper">
+            <div className="search-input-box">
+              <Search size={16} color="#94a3b8" />
+              <input
+                type="text"
+                placeholder="Hanapin: product, brand, code..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              {searchTerm && (
+                <X size={14} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={() => setSearchTerm('')} />
+              )}
             </div>
 
-            {/* Search, Supplier & Sort/View Toggle */}
-            <div className="search-supplier-wrapper">
-              {activeTab === 'Buong Rekord' && (
-                <select 
-                  className="supplier-dropdown"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                >
-                  <option value="name">Sort by Name (A-Z)</option>
-                  <option value="stock_desc">Stock: High to Low</option>
-                  <option value="stock_asc">Stock: Low to High</option>
-                  <option value="price_desc">Price: High to Low</option>
-                </select>
-              )}
-
-              <select 
-                className="supplier-dropdown"
-                value={selectedSupplier}
-                onChange={(e) => setSelectedSupplier(e.target.value)}
+            <div className="view-toggle-btns">
+              <button 
+                className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                onClick={() => setViewMode('grid')}
+                title="Grid Cards View"
               >
-                {supplierOptions.map((supplier) => (
-                  <option key={supplier} value={supplier}>{supplier}</option>
-                ))}
-              </select>
-
-              <div className="search-input-box">
-                <Search size={16} color="#94a3b8" />
-                <input
-                  type="text"
-                  placeholder="Hanapin: product, brand, supplier, code..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                {searchTerm && (
-                  <X size={14} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={() => setSearchTerm('')} />
-                )}
-              </div>
-
-              {activeTab === 'Mga Batch' && (
-                <div className="view-toggle-btns">
-                  <button 
-                    className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
-                    onClick={() => setViewMode('grid')}
-                    title="Grid Cards View"
-                  >
-                    <LayoutGrid size={18} />
-                  </button>
-                  <button 
-                    className={`view-btn ${viewMode === 'table' ? 'active' : ''}`}
-                    onClick={() => setViewMode('table')}
-                    title="Table List View"
-                  >
-                    <List size={18} />
-                  </button>
-                </div>
-              )}
+                <LayoutGrid size={18} />
+              </button>
+              <button 
+                className={`view-btn ${viewMode === 'table' ? 'active' : ''}`}
+                onClick={() => setViewMode('table')}
+                title="Table List View"
+              >
+                <List size={18} />
+              </button>
             </div>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* TAB 1: MGA BATCH (PRODUCT BATCH GRID & CARDS) */}
-      {activeTab === 'Mga Batch' && (
-        isLoading ? (
+      {/* PRODUCT BATCH GRID & CARDS */}
+      {isLoading ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '20px', border: '1.5px solid #e2e8f0' }}>
             <RefreshCw size={36} color="#0c250d" style={{ animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
             <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0c250d' }}>Kinakarga ang inventory data...</div>
@@ -832,34 +711,41 @@ const Inventory = () => {
                       </span>
                     </div>
 
-                    <div className="card-stock-box">
-                      <div className="stock-box-header">
-                        <div className="stock-main-qty">
-                          {currentStock} <span>{item.unit || 'kg'}</span>
-                        </div>
-                        <div className="threshold-lbl">Threshold: {threshold} {item.unit || 'kg'}</div>
-                      </div>
-
-                      <div className="quick-adjust-buttons">
-                        <button className="btn-quick" onClick={() => adjustStock(item.id, -10)}>-10</button>
-                        <button className="btn-quick" onClick={() => adjustStock(item.id, -1)}>-1</button>
-                        <input 
-                          type="number" 
-                          className="qty-display-input" 
-                          value={currentStock}
-                          onChange={(e) => handleStockChange(item.id, e.target.value)}
-                        />
-                        <button className="btn-quick" onClick={() => adjustStock(item.id, 1)}>+1</button>
-                        <button className="btn-quick" onClick={() => adjustStock(item.id, 10)}>+10</button>
-                        <button 
-                          className="btn-quick" 
-                          style={{ background: '#059669', color: 'white', borderColor: '#059669' }} 
-                          onClick={() => saveIndividualStock(item)}
-                          title="Save Stock Level"
-                        >
-                          <Save size={13} />
-                        </button>
-                      </div>
+                    <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '12px', margin: '12px 0 8px', border: '1px solid #e2e8f0' }}>
+                      {(() => {
+                        const availBoxes = getItemBoxes(item).filter(b => !b.disabled && !b.ordered);
+                        return (
+                          <>
+                            <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#475569', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>📦</span> Mga Available na Kahon ({availBoxes.length})
+                            </div>
+                            {availBoxes.length > 0 ? (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '70px', overflowY: 'auto' }}>
+                                {availBoxes.map((b, idx) => (
+                                  <span 
+                                    key={b.id || idx} 
+                                    style={{ 
+                                      background: '#ecfdf5', 
+                                      border: '1px solid #a7f3d0', 
+                                      color: '#047857', 
+                                      padding: '2px 8px', 
+                                      borderRadius: '8px', 
+                                      fontSize: '0.75rem', 
+                                      fontWeight: 700 
+                                    }}
+                                  >
+                                    {b.name || `Box ${idx+1}`}: <strong>{b.weight} kg</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                                Walang magagamit na kahon
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     <div className="card-progress-section">
@@ -870,15 +756,23 @@ const Inventory = () => {
                         ></div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="card-action-bar">
-                    <button className="btn-card-edit" onClick={() => handleEditItem(item)}>
-                      <Edit2 size={14} /> Edit Product
-                    </button>
-                    <button className="btn-card-delete" onClick={() => handleDeleteItem(item)} title="Delete Item">
-                      <Trash2 size={14} />
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #f1f5f9', justifyContent: 'flex-end' }}>
+                      <button 
+                        type="button"
+                        onClick={() => handleEditItem(item)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#f1f5f9', border: 'none', borderRadius: '8px', color: '#0f172a', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}
+                      >
+                        <Edit2 size={14} color="#059669" /> Edit
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => handleDeleteItem(item)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', background: '#fee2e2', border: 'none', borderRadius: '8px', color: '#dc2626', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}
+                      >
+                        <Trash2 size={14} color="#dc2626" /> Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -892,10 +786,11 @@ const Inventory = () => {
                   <th>Product Name</th>
                   <th>Category</th>
                   <th>Price</th>
-                  <th>Stock Level (Quick Adjust)</th>
+                  <th>Stock Level</th>
+                  <th>Mga Available na Kahon</th>
                   <th>Threshold</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th style={{ textAlign: 'right' }}>Mga Aksyon</th>
                 </tr>
               </thead>
               <tbody>
@@ -906,6 +801,7 @@ const Inventory = () => {
                   const isLow = !isOut && currentStock > 0 && currentStock <= threshold;
                   const statusType = isOut ? 'ubos' : isLow ? 'paubos' : 'ok';
                   const defaultImg = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80';
+                  const availableBoxes = getItemBoxes(item).filter(b => !b.disabled && !b.ordered);
 
                   return (
                     <tr key={item.id}>
@@ -929,22 +825,32 @@ const Inventory = () => {
                         </span>
                       </td>
                       <td style={{ fontWeight: 800, color: '#059669' }}>₱{Number(item.price).toFixed(2)}</td>
+                      <td style={{ fontWeight: 700, color: '#0f172a' }}>
+                        {currentStock} {item.unit || 'kg'}
+                      </td>
                       <td>
-                        <div className="quick-adjust-buttons" style={{ justifyContent: 'flex-start' }}>
-                          <button className="btn-quick" onClick={() => adjustStock(item.id, -10)}>-10</button>
-                          <button className="btn-quick" onClick={() => adjustStock(item.id, -1)}>-1</button>
-                          <input 
-                            type="number" 
-                            className="qty-display-input" 
-                            value={currentStock}
-                            onChange={(e) => handleStockChange(item.id, e.target.value)}
-                          />
-                          <button className="btn-quick" onClick={() => adjustStock(item.id, 1)}>+1</button>
-                          <button className="btn-quick" onClick={() => adjustStock(item.id, 10)}>+10</button>
-                          <button className="btn-quick" style={{ background: '#059669', color: 'white', borderColor: '#059669' }} onClick={() => saveIndividualStock(item)}>
-                            <Save size={13} />
-                          </button>
-                        </div>
+                        {availableBoxes.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '240px' }}>
+                            {availableBoxes.map((b, idx) => (
+                              <span 
+                                key={b.id || idx} 
+                                style={{ 
+                                  background: '#ecfdf5', 
+                                  border: '1px solid #a7f3d0', 
+                                  color: '#047857', 
+                                  padding: '2px 6px', 
+                                  borderRadius: '6px', 
+                                  fontSize: '0.72rem', 
+                                  fontWeight: 700 
+                                }}
+                              >
+                                {b.name}: {b.weight}kg
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>Walang magagamit na kahon</span>
+                        )}
                       </td>
                       <td style={{ fontWeight: 700, color: '#64748b' }}>{threshold} {item.unit || 'kg'}</td>
                       <td>
@@ -956,11 +862,21 @@ const Inventory = () => {
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                          <button className="btn-card-edit" style={{ padding: '6px 12px' }} onClick={() => handleEditItem(item)}>
-                            <Edit2 size={13} /> Edit
+                          <button 
+                            type="button"
+                            onClick={() => handleEditItem(item)}
+                            style={{ padding: '6px 10px', background: '#f1f5f9', border: 'none', borderRadius: '8px', color: '#0f172a', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            title="Edit Product"
+                          >
+                            <Edit2 size={14} color="#059669" /> Edit
                           </button>
-                          <button className="btn-card-delete" style={{ padding: '6px 10px' }} onClick={() => handleDeleteItem(item)}>
-                            <Trash2 size={13} />
+                          <button 
+                            type="button"
+                            onClick={() => handleDeleteItem(item)}
+                            style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', color: '#dc2626', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            title="Delete Product"
+                          >
+                            <Trash2 size={14} color="#dc2626" /> Delete
                           </button>
                         </div>
                       </td>
@@ -971,288 +887,12 @@ const Inventory = () => {
             </table>
           </div>
         )
-      )}
-
-      {/* TAB 2: SUMMARY NG STOCK (CATEGORY ANALYTICAL BREAKDOWN) */}
-      {activeTab === 'Summary ng Stock' && (
-        <div className="summary-analytics-section">
-          <div className="analytics-card-container">
-            <div className="analytics-title-header">
-              <h2>
-                <BarChart3 size={24} color="#0c250d" />
-                Category Stock Summary & Inventory Valuation
-              </h2>
-              <button className="btn-tool" onClick={handleExportExcel}>
-                <FileSpreadsheet size={16} color="#059669" /> Export Summary CSV
-              </button>
-            </div>
-
-            <table className="category-summary-table">
-              <thead>
-                <tr>
-                  <th>Category Name</th>
-                  <th>Product Varieties</th>
-                  <th>Total Stock Qty</th>
-                  <th>Est. Inventory Value</th>
-                  <th>Stock Health (OK / Low / Out)</th>
-                  <th>Share of Inventory %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categorySummaries.map(cat => (
-                  <tr key={cat.id}>
-                    <td>
-                      <strong style={{ fontSize: '0.98rem', color: '#0f172a' }}>{cat.name}</strong>
-                    </td>
-                    <td style={{ fontWeight: 700, color: '#475569' }}>{cat.itemCount} items</td>
-                    <td>
-                      <strong style={{ fontSize: '1.05rem', color: '#0c250d' }}>{cat.totalStock.toFixed(1)}</strong> <span style={{ fontSize: '0.8rem', color: '#64748b' }}>kg/units</span>
-                    </td>
-                    <td style={{ fontWeight: 800, color: '#059669', fontSize: '1.02rem' }}>
-                      ₱{cat.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <span className="status-badge ok" style={{ padding: '3px 8px', fontSize: '0.72rem' }}>{cat.okCount} OK</span>
-                        {cat.lowCount > 0 && <span className="status-badge paubos" style={{ padding: '3px 8px', fontSize: '0.72rem' }}>{cat.lowCount} Low</span>}
-                        {cat.outCount > 0 && <span className="status-badge ubos" style={{ padding: '3px 8px', fontSize: '0.72rem' }}>{cat.outCount} Out</span>}
-                      </div>
-                    </td>
-                    <td style={{ width: '220px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div className="cat-progress-bar">
-                          <div className="cat-progress-fill" style={{ width: `${Math.min(cat.percentage, 100)}%` }}></div>
-                        </div>
-                        <span style={{ fontWeight: 800, fontSize: '0.82rem', color: '#334155' }}>{cat.percentage}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Urgent Low / Out of Stock Action List */}
-          {(stats.low > 0 || stats.out > 0) && (
-            <div className="analytics-card-container" style={{ borderLeft: '4px solid #ef4444' }}>
-              <div className="analytics-title-header">
-                <h2 style={{ color: '#dc2626' }}>
-                  <ShieldAlert size={22} color="#dc2626" />
-                  Urgent Restock Action Needed ({stats.low + stats.out} Products)
-                </h2>
-              </div>
-
-              <div className="inventory-grid">
-                {allItems.filter(item => {
-                  const s = localStockState[item.id]?.stock ?? item.stock ?? 0;
-                  const th = item.low_stock_threshold || 5;
-                  return s <= th || item.out_of_stock;
-                }).map(item => {
-                  const currentStock = localStockState[item.id]?.stock ?? item.stock ?? 0;
-                  const threshold = item.low_stock_threshold || 5;
-                  const isOut = currentStock === 0 || item.out_of_stock;
-                  return (
-                    <div key={item.id} style={{ background: isOut ? '#fff1f2' : '#fffbeb', padding: '16px 20px', borderRadius: '16px', border: isOut ? '1px solid #fca5a5' : '1px solid #fde047', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: '0.98rem', color: '#0f172a' }}>{item.name}</div>
-                        <div style={{ fontSize: '0.82rem', color: '#64748b' }}>Current: <strong style={{ color: isOut ? '#dc2626' : '#b45309' }}>{currentStock} {item.unit || 'kg'}</strong> (Min: {threshold})</div>
-                      </div>
-                      <button className="btn-quick" style={{ background: '#0c250d', color: '#F9B700', border: 'none', padding: '8px 14px' }} onClick={() => handleEditItem(item)}>
-                        Restock Now
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: BUONG REKORD (FULL MASTER AUDIT TABLE VIEW) */}
-      {activeTab === 'Buong Rekord' && (
-        <div className="inventory-table-container">
-          <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 900, color: '#0c250d' }}>
-                Master Inventory Audit Ledger ({filteredItems.length} Records)
-              </h3>
-              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-                Kumpletong talaan ng presyo, bodega ratio, threshold, at stock status ng lahat ng items.
-              </p>
-            </div>
-            <button className="btn-tool primary" onClick={handleExportExcel}>
-              <FileSpreadsheet size={16} /> Export Full Ledger
-            </button>
-          </div>
-
-          <table className="inventory-table">
-            <thead>
-              <tr>
-                <th>Product & SKU</th>
-                <th>Category</th>
-                <th>Price / Unit</th>
-                <th>Current Stock</th>
-                <th>Threshold</th>
-                <th>Bodega Allocation</th>
-                <th>Shop Floor</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.map(item => {
-                const currentStock = localStockState[item.id]?.stock ?? item.stock ?? 0;
-                const threshold = item.low_stock_threshold || 5;
-                const isOut = currentStock === 0 || item.out_of_stock;
-                const isLow = !isOut && currentStock > 0 && currentStock <= threshold;
-                const statusType = isOut ? 'ubos' : isLow ? 'paubos' : 'ok';
-                const categoryName = categories.find(c => c.id === item.category_id)?.name || 'General';
-                const bodegaQty = (currentStock * 0.6).toFixed(1);
-                const shopQty = (currentStock * 0.4).toFixed(1);
-
-                return (
-                  <tr key={item.id}>
-                    <td>
-                      <div>
-                        <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{item.name}</strong>
-                        <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>ID: {item.id}</div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="cat-badge">{categoryName}</span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 800, color: '#059669' }}>₱{Number(item.price).toFixed(2)}</div>
-                      <span style={{ fontSize: '0.74rem', color: '#64748b' }}>per {item.unit || 'kg'}</span>
-                    </td>
-                    <td>
-                      <div className="quick-adjust-buttons" style={{ justifyContent: 'flex-start' }}>
-                        <input 
-                          type="number" 
-                          className="qty-display-input" 
-                          value={currentStock}
-                          onChange={(e) => handleStockChange(item.id, e.target.value)}
-                        />
-                        <button className="btn-quick" style={{ background: '#059669', color: 'white', borderColor: '#059669' }} onClick={() => saveIndividualStock(item)}>
-                          <Save size={13} />
-                        </button>
-                      </div>
-                    </td>
-                    <td style={{ fontWeight: 700, color: '#64748b' }}>{threshold} {item.unit || 'kg'}</td>
-                    <td style={{ fontWeight: 600, color: '#3b82f6' }}>📦 {bodegaQty} {item.unit || 'kg'}</td>
-                    <td style={{ fontWeight: 600, color: '#d97706' }}>🏪 {shopQty} {item.unit || 'kg'}</td>
-                    <td>
-                      <span className={`status-badge ${statusType}`}>
-                        {statusType === 'ok' && '🟢 OK'}
-                        {statusType === 'paubos' && '🟡 Paubos'}
-                        {statusType === 'ubos' && '🔴 Ubos'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                        <button className="btn-card-edit" style={{ padding: '6px 12px' }} onClick={() => handleEditItem(item)}>
-                          <Edit2 size={13} /> Edit
-                        </button>
-                        <button className="btn-card-delete" style={{ padding: '6px 10px' }} onClick={() => handleDeleteItem(item)}>
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* TAB 4: MGA SUPPLIER (MANAGED SUPPLIERS PAGE) */}
-      {activeTab === 'Mga Supplier' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '20px', border: '1.5px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 900, color: '#0c250d', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Truck size={24} color="#0c250d" />
-                Meat & Poultry Registered Vendors / Suppliers
-              </h2>
-              <p style={{ margin: '4px 0 0', fontSize: '0.88rem', color: '#64748b' }}>
-                Pamahalaan ang impormasyon, hotline, at contact details ng mga supplier ng Chilled & Frozen Hub.
-              </p>
-            </div>
-            <button className="btn-new-batch" onClick={() => { setEditingSupplier(null); setShowSupplierModal(true); }}>
-              <Plus size={18} /> Add New Supplier
-            </button>
-          </div>
-
-          <div className="suppliers-grid">
-            {suppliersList.map(supp => (
-              <div key={supp.id} className="supplier-card">
-                <div>
-                  <div className="supplier-card-header">
-                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                      <div className="supplier-avatar">
-                        {supp.name.charAt(0)}
-                      </div>
-                      <div>
-                        <h3 className="supplier-name">{supp.name}</h3>
-                        <div className="supplier-contact-person">
-                          <UserCheck size={14} color="#059669" /> Contact: {supp.contact_person || 'N/A'}
-                        </div>
-                      </div>
-                    </div>
-                    <span className={`status-badge ${supp.is_active !== false ? 'ok' : 'ubos'}`}>
-                      {supp.is_active !== false ? 'Active Vendor' : 'Inactive'}
-                    </span>
-                  </div>
-
-                  <div className="supplier-contact-info">
-                    {supp.phone && (
-                      <div className="supplier-info-row">
-                        <Phone size={14} color="#0c250d" />
-                        <span>Hotline: <a href={`tel:${supp.phone}`}>{supp.phone}</a></span>
-                      </div>
-                    )}
-                    {supp.email && (
-                      <div className="supplier-info-row">
-                        <Mail size={14} color="#0c250d" />
-                        <span>Email: <a href={`mailto:${supp.email}`}>{supp.email}</a></span>
-                      </div>
-                    )}
-                    {supp.address && (
-                      <div className="supplier-info-row">
-                        <MapPin size={14} color="#0c250d" />
-                        <span>{supp.address}</span>
-                      </div>
-                    )}
-                    {supp.notes && (
-                      <div style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic', borderTop: '1px solid #e2e8f0', paddingTop: '6px', marginTop: '4px' }}>
-                        "{supp.notes}"
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="card-action-bar">
-                  <button className="btn-card-edit" onClick={() => { setEditingSupplier(supp); setShowSupplierModal(true); }}>
-                    <Edit2 size={14} /> Edit Supplier
-                  </button>
-                  <button className="btn-card-delete" onClick={() => handleDeleteSupplier(supp)} title="Delete Supplier">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
+      }
       {/* NEW / EDIT BATCH MODAL */}
       {(showNewBatchModal || showEditModal) && (
         <BatchModal 
           item={editingItem}
           categories={categories}
-          suppliers={suppliersList}
           onSave={handleSaveItem}
           onClose={() => {
             setShowNewBatchModal(false);
@@ -1261,23 +901,11 @@ const Inventory = () => {
           }}
         />
       )}
-
-      {/* NEW / EDIT SUPPLIER MODAL */}
-      {showSupplierModal && (
-        <SupplierModal 
-          supplier={editingSupplier}
-          onSave={handleSaveSupplier}
-          onClose={() => {
-            setShowSupplierModal(false);
-            setEditingSupplier(null);
-          }}
-        />
-      )}
     </div>
   );
 };
 
-const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
+const BatchModal = ({ item, categories, onSave, onClose }) => {
   const [formData, setFormData] = useState(item || {
     name: '',
     description: '',
@@ -1292,88 +920,97 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
     image: ''
   });
 
-  const [weightMode, setWeightMode] = useState('same'); // 'same' | 'catch'
-  const [boxQty, setBoxQty] = useState('');
-  const [weightPerBox, setWeightPerBox] = useState('');
-  const [catchBoxes, setCatchBoxes] = useState(['15.30']);
-  const [costPerKg, setCostPerKg] = useState('');
-  const [pricePerKg, setPricePerKg] = useState(item?.price ? String(item.price) : '');
-  const [imagePreview, setImagePreview] = useState(item?.image || '');
+  const [editableBoxes, setEditableBoxes] = useState(() => {
+    if (item && Array.isArray(item.boxes) && item.boxes.length > 0) {
+      return item.boxes.map((b, i) => ({
+        id: b.id || `box-${i + 1}`,
+        name: b.name || `Box ${i + 1}`,
+        weight: b.weight ?? 15.00,
+        stockQty: b.stockQty !== undefined ? b.stockQty : 1,
+        pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
+        price: b.price !== undefined ? b.price : '',
+        disabled: Boolean(b.disabled || b.ordered)
+      }));
+    }
+    return [
+      { id: 'box-1', name: 'Box 1', weight: 15.30, stockQty: 1, pricePerKg: '', price: '', disabled: false },
+      { id: 'box-2', name: 'Box 2', weight: 15.00, stockQty: 1, pricePerKg: '', price: '', disabled: false }
+    ];
+  });
+
+  const [_imagePreview, setImagePreview] = useState(item?.image || '');
+
+  useEffect(() => {
+    if (item && Array.isArray(item.boxes) && item.boxes.length > 0) {
+      setEditableBoxes(item.boxes.map((b, i) => ({
+        id: b.id || `box-${i + 1}`,
+        name: b.name || `Box ${i + 1}`,
+        weight: b.weight ?? 15.00,
+        stockQty: b.stockQty !== undefined ? b.stockQty : 1,
+        pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
+        price: b.price !== undefined ? b.price : '',
+        disabled: Boolean(b.disabled || b.ordered)
+      })));
+    }
+  }, [item]);
 
   // Auto calculate total weight
   const totalCalculatedWeight = useMemo(() => {
-    if (weightMode === 'same') {
-      const q = parseFloat(boxQty) || 0;
-      const w = parseFloat(weightPerBox) || 0;
-      return (q * w).toFixed(2);
-    } else {
-      if (catchBoxes.length === 0) return '0';
-      const sum = catchBoxes.reduce((acc, curr) => acc + (parseFloat(curr) || 0), 0);
-      return sum.toFixed(2);
-    }
-  }, [weightMode, boxQty, weightPerBox, catchBoxes]);
+    if (editableBoxes.length === 0) return '0';
+    const sum = editableBoxes.reduce((acc, b) => acc + (parseFloat(b.weight) || 0), 0);
+    return sum.toFixed(3);
+  }, [editableBoxes]);
 
-  // Keep formData.stock synced with calculated weight
-  useEffect(() => {
-    const wt = parseFloat(totalCalculatedWeight);
-    if (wt > 0) {
-      setFormData(prev => ({ ...prev, stock: wt }));
-    }
-  }, [totalCalculatedWeight]);
-
-  useEffect(() => {
-    if (pricePerKg !== '') {
-      setFormData(prev => ({ ...prev, price: pricePerKg }));
-    }
-  }, [pricePerKg]);
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-        setFormData(prev => ({ ...prev, image: reader.result }));
-      };
-      reader.readAsDataURL(file);
-    }
+  const handleAddBox = () => {
+    const nextIdx = editableBoxes.length + 1;
+    setEditableBoxes(prev => [
+      ...prev,
+      { id: `box-${Date.now()}`, name: `Box ${nextIdx}`, weight: 15.00, disabled: false }
+    ]);
   };
 
-  const handleAddCatchBox = () => {
-    setCatchBoxes(prev => [...prev, '15.00']);
+  const handleUpdateBox = (index, field, val) => {
+    const updated = [...editableBoxes];
+    updated[index] = { ...updated[index], [field]: val };
+    setEditableBoxes(updated);
   };
 
-  const handleUpdateCatchBox = (index, val) => {
-    const updated = [...catchBoxes];
-    updated[index] = val;
-    setCatchBoxes(updated);
-  };
-
-  const handleRemoveCatchBox = (index) => {
-    setCatchBoxes(prev => prev.filter((_, i) => i !== index));
+  const handleRemoveBox = (index) => {
+    setEditableBoxes(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.category_id || (!formData.price && !pricePerKg)) {
-      alert('Pakipunan ang obligadong fields: Product Name, Category, at Price per kg');
+    if (!formData.name || !formData.category_id || !formData.price) {
+      alert('Pakipunan ang obligadong fields: Product Name, Category, at Price');
       return;
     }
 
-    const finalStock = parseFloat(totalCalculatedWeight) > 0 
-      ? parseFloat(totalCalculatedWeight) 
+    const activeBoxesWeight = editableBoxes.reduce((acc, b) => {
+      if (b.disabled) return acc;
+      const w = parseFloat(b.weight) || 0;
+      const qty = b.stockQty !== undefined ? Number(b.stockQty) : 1;
+      return acc + (w * qty);
+    }, 0);
+
+    const finalStock = editableBoxes.length > 0
+      ? Number(activeBoxesWeight.toFixed(3)) 
       : (parseFloat(formData.stock) || 0);
 
-    const finalPrice = pricePerKg !== '' ? parseFloat(pricePerKg) : parseFloat(formData.price || 0);
+    const finalPrice = parseFloat(formData.price || 0);
 
-    let batchNotes = formData.description || '';
-    if (costPerKg) {
-      batchNotes = batchNotes ? `${batchNotes} | Cost: ₱${costPerKg}/kg` : `Cost: ₱${costPerKg}/kg`;
-    }
-    if (weightMode === 'same' && boxQty && weightPerBox) {
-      batchNotes += ` | Boxes: ${boxQty} @ ${weightPerBox}kg`;
-    } else if (weightMode === 'catch' && catchBoxes.length > 0) {
-      batchNotes += ` | Catch Weight Boxes: ${catchBoxes.length} pcs (${catchBoxes.join(', ')} kg)`;
+    let generatedBoxes = item?.boxes || [];
+    if (editableBoxes.length > 0) {
+      generatedBoxes = editableBoxes.map((b, i) => ({
+        id: b.id || `box-${i + 1}`,
+        name: b.name || `Box ${i + 1}`,
+        weight: parseFloat(b.weight) || 0,
+        stockQty: b.stockQty !== undefined ? Number(b.stockQty) : 1,
+        pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
+        price: b.price !== undefined ? b.price : '',
+        disabled: Boolean(b.disabled),
+        ordered: Boolean(b.disabled)
+      }));
     }
 
     onSave({
@@ -1381,9 +1018,10 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
       price: finalPrice,
       promo_price: formData.promo_price ? parseFloat(formData.promo_price) : null,
       stock: finalStock,
+      boxes: generatedBoxes,
       low_stock_threshold: parseInt(formData.low_stock_threshold, 10) || 5,
       out_of_stock: Boolean(formData.out_of_stock || finalStock === 0),
-      description: batchNotes
+      description: formData.description || ''
     });
   };
 
@@ -1398,7 +1036,7 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
               Pasok / Bagong Batch
             </h2>
             <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.88rem' }}>
-              I-record ang bagong dating — supplier, storage, at timbang ng bawat box
+              I-record ang bagong dating — storage at timbang ng bawat box
             </p>
           </div>
           <button 
@@ -1446,215 +1084,168 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
             <div style={{ background: '#f4f6f8', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '1rem', color: '#1e293b', marginBottom: '14px', fontFamily: 'Outfit, Georgia, serif' }}>
                 <span>📦</span>
-                <span>Timbang ng mga box</span>
+                <span>Timbang at Listahan ng mga Box (Editable)</span>
               </div>
 
-              {/* Mode Segmented Tab Switcher */}
-              <div style={{ background: '#e2e8f0', padding: '4px', borderRadius: '12px', display: 'inline-flex', gap: '4px', marginBottom: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setWeightMode('same')}
-                  style={{
-                    padding: '8px 18px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: weightMode === 'same' ? 'white' : 'transparent',
-                    color: weightMode === 'same' ? '#1e293b' : '#64748b',
-                    fontWeight: weightMode === 'same' ? 800 : 600,
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
-                    boxShadow: weightMode === 'same' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  Pareho ang timbang
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWeightMode('catch')}
-                  style={{
-                    padding: '8px 18px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: weightMode === 'catch' ? 'white' : 'transparent',
-                    color: weightMode === 'catch' ? '#1e293b' : '#64748b',
-                    fontWeight: weightMode === 'catch' ? 800 : 600,
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
-                    boxShadow: weightMode === 'catch' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  Iba-iba (catch weight)
-                </button>
-              </div>
-
-              {/* Mode: Pareho ang timbang */}
-              {weightMode === 'same' ? (
+              {/* Editable Boxes */}
+              {(
+                /* Mode: Editable Available Boxes */
                 <div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Quantity of boxes</label>
-                      <input 
-                        type="number"
-                        className="form-input-styled"
-                        value={boxQty}
-                        onChange={(e) => setBoxQty(e.target.value)}
-                        placeholder="hal. 20"
-                        style={{ background: 'white' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Weight per box (kg)</label>
-                      <input 
-                        type="number"
-                        step="0.01"
-                        className="form-input-styled"
-                        value={weightPerBox}
-                        onChange={(e) => setWeightPerBox(e.target.value)}
-                        placeholder="hal. 15.30"
-                        style={{ background: 'white' }}
-                      />
-                    </div>
-                  </div>
+                  {/* Available Stock & Box Count Summary Banner */}
+                  {(() => {
+                    const unitPrice = parseFloat(formData.price || 0);
+                    const avail = editableBoxes.filter(b => !b.disabled);
+                    const availCount = avail.length;
+                    const availWeight = avail.reduce((sum, b) => sum + (parseFloat(b.weight) || 0), 0);
+                    const totalVal = avail.reduce((sum, b) => {
+                      if (b.price !== undefined && b.price !== null && b.price !== '') {
+                        return sum + Number(b.price);
+                      }
+                      return sum + ((parseFloat(b.weight) || 0) * unitPrice);
+                    }, 0);
 
-                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '6px' }}>
-                    {(!boxQty && !weightPerBox) ? (
-                      "Wala pang box. Gamitin ang mga field sa taas."
-                    ) : (
-                      `Nakalkula: ${boxQty || 0} box × ${weightPerBox || 0} kg = ${totalCalculatedWeight} kg`
-                    )}
-                  </div>
-                </div>
-              ) : (
-                /* Mode: Iba-iba (catch weight) */
-                <div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
-                    {catchBoxes.map((w, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#475569', minWidth: '60px' }}>Box #{idx + 1}:</span>
-                        <input 
-                          type="number"
-                          step="0.01"
-                          className="form-input-styled"
-                          value={w}
-                          onChange={(e) => handleUpdateCatchBox(idx, e.target.value)}
-                          placeholder="hal. 15.30"
-                          style={{ background: 'white', flex: 1 }}
-                        />
-                        <span style={{ fontSize: '0.82rem', color: '#64748b' }}>kg</span>
-                        {catchBoxes.length > 1 && (
-                          <button 
-                            type="button" 
-                            onClick={() => handleRemoveCatchBox(idx)}
-                            style={{ border: 'none', background: '#fee2e2', color: '#ef4444', borderRadius: '8px', width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <X size={14} />
-                          </button>
+                    return (
+                      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '10px 14px', borderRadius: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ fontWeight: 800, color: '#065f46' }}>
+                          📦 Available Boxes: <span style={{ background: '#059669', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.78rem' }}>{availCount} Box{availCount !== 1 ? 'es' : ''} Stock ({availWeight.toFixed(3)} kg)</span>
+                        </div>
+                        {unitPrice > 0 && (
+                          <div style={{ fontWeight: 800, color: '#047857' }}>
+                            Kabuuan Halaga: <span style={{ color: '#059669' }}>₱{Number(totalVal.toFixed(2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
                         )}
                       </div>
-                    ))}
+                    );
+                  })()}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', maxHeight: '240px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {editableBoxes.map((b, idx) => {
+                      const unitPrice = parseFloat(formData.price || 0);
+                      const boxPKg = b.pricePerKg !== undefined && b.pricePerKg !== '' ? parseFloat(b.pricePerKg) : unitPrice;
+                      const computedPrice = ((parseFloat(b.weight) || 0) * boxPKg).toFixed(2);
+                      const displayPrice = (b.price !== undefined && b.price !== null && b.price !== '') ? b.price : computedPrice;
+
+                      return (
+                        <div key={b.id || idx} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', background: 'white', padding: '12px', borderRadius: '12px', border: b.disabled ? '1px dashed #fca5a5' : '1px solid #cbd5e1', opacity: b.disabled ? 0.75 : 1 }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#0f172a', minWidth: '25px' }}>#{idx + 1}</span>
+
+                          <input 
+                            type="text"
+                            className="form-input-styled"
+                            value={b.name}
+                            onChange={(e) => handleUpdateBox(idx, 'name', e.target.value)}
+                            placeholder="Pangalan (hal. Box 1)"
+                            style={{ flex: '1 1 100px', minWidth: '100px', background: '#f8fafc', padding: '6px 10px', fontSize: '0.85rem' }}
+                          />
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>Timbang:</span>
+                            <input 
+                              type="number"
+                              step="0.001"
+                              className="form-input-styled"
+                              value={b.weight}
+                              onChange={(e) => {
+                                const newW = parseFloat(e.target.value) || 0;
+                                handleUpdateBox(idx, 'weight', newW);
+                                if (b.price === undefined || b.price === null || b.price === '') {
+                                  if (boxPKg > 0) handleUpdateBox(idx, 'price', Number((newW * boxPKg).toFixed(2)));
+                                }
+                              }}
+                              placeholder="kg"
+                              style={{ width: '70px', background: '#f8fafc', padding: '6px 8px', fontSize: '0.85rem' }}
+                            />
+                            <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 700 }}>kg</span>
+                          </div>
+
+                          {/* Editable Price Per Kg Field */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0284c7' }}>₱/kg:</span>
+                            <input 
+                              type="number"
+                              step="0.01"
+                              className="form-input-styled"
+                              value={b.pricePerKg !== undefined ? b.pricePerKg : ''}
+                              onChange={(e) => {
+                                const customPKg = e.target.value === '' ? '' : parseFloat(e.target.value);
+                                handleUpdateBox(idx, 'pricePerKg', customPKg);
+                                
+                                const currentW = parseFloat(b.weight) || 0;
+                                const activePKg = customPKg !== '' ? customPKg : unitPrice;
+                                handleUpdateBox(idx, 'price', Number((currentW * activePKg).toFixed(2)));
+                              }}
+                              placeholder={unitPrice.toString()}
+                              style={{ width: '70px', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#0284c7' }}
+                              title={`I-edit ang presyo per kilo para sa ${b.name}`}
+                            />
+                          </div>
+
+                          {/* Editable Stock Qty */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#2563eb' }}>Stocks:</span>
+                            <input 
+                              type="number"
+                              min="0"
+                              className="form-input-styled"
+                              value={b.stockQty !== undefined ? b.stockQty : 1}
+                              onChange={(e) => handleUpdateBox(idx, 'stockQty', parseInt(e.target.value) || 0)}
+                              style={{ width: '60px', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#1d4ed8' }}
+                            />
+                          </div>
+
+                          {/* Editable Total Price Field */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#059669' }}>Total ₱:</span>
+                            <input 
+                              type="number"
+                              step="0.01"
+                              className="form-input-styled"
+                              value={displayPrice}
+                              onChange={(e) => {
+                                const customP = e.target.value === '' ? '' : parseFloat(e.target.value);
+                                handleUpdateBox(idx, 'price', customP);
+                              }}
+                              placeholder="Kabuuan"
+                              style={{ width: '85px', background: '#f0fdf4', border: '1px solid #a7f3d0', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#059669' }}
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', cursor: 'pointer', color: b.disabled ? '#dc2626' : '#047857', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                              <input 
+                                type="checkbox"
+                                checked={Boolean(b.disabled)}
+                                onChange={(e) => handleUpdateBox(idx, 'disabled', e.target.checked)}
+                              />
+                              {b.disabled ? '❌ Sold' : 'Avail'}
+                            </label>
+
+                            <button 
+                              type="button" 
+                              onClick={() => handleRemoveBox(idx)}
+                              style={{ border: 'none', background: '#fee2e2', color: '#ef4444', borderRadius: '8px', padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              title="Bura Box"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+
                   <button 
                     type="button"
-                    onClick={handleAddCatchBox}
-                    style={{ border: '1px dashed #cbd5e1', background: 'white', color: '#0c250d', borderRadius: '10px', padding: '6px 14px', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    onClick={handleAddBox}
+                    style={{ border: '1px dashed #059669', background: '#ecfdf5', color: '#047857', borderRadius: '10px', padding: '8px 16px', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                   >
-                    <Plus size={14} /> Magdagdag ng Box
+                    <Plus size={15} /> Magdagdag ng Box
                   </button>
                 </div>
               )}
             </div>
 
-            {/* KABUUANG TIMBANG (AUTO) - EXACT MATCH TO IMAGE */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                Kabuuang timbang (auto)
-              </label>
-              <div style={{ background: '#dce4dd', border: '1px solid #bdc9be', borderRadius: '12px', padding: '12px 18px', fontSize: '1.15rem', fontWeight: 800, color: '#163618' }}>
-                {totalCalculatedWeight || 0}
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px' }}>
-                Sum ng lahat ng box. Awtomatikong pumapasok sa inventory pagka-save.
-              </div>
-            </div>
 
-            {/* PRICING GRID - COST & PRICE PER KG */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Cost per kg (puhunan)
-                </label>
-                <input 
-                  type="number"
-                  step="0.01"
-                  className="form-input-styled"
-                  value={costPerKg}
-                  onChange={(e) => setCostPerKg(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                  Price per kg (benta)
-                </label>
-                <input 
-                  type="number"
-                  step="0.01"
-                  className="form-input-styled"
-                  value={pricePerKg}
-                  onChange={(e) => setPricePerKg(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-
-            {/* SUPPLIER & ADDITIONAL INFO */}
-            {suppliers.length > 0 && (
-              <div className="form-group-item" style={{ margin: 0 }}>
-                <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Supplier / Vendor</label>
-                <select 
-                  className="form-input-styled"
-                  value={suppliers.find(s => formData.description?.includes(s.name))?.name || ''}
-                  onChange={(e) => {
-                    const selName = e.target.value;
-                    if (selName) {
-                      setFormData(prev => ({
-                        ...prev,
-                        description: prev.description ? `${prev.description} | Supplier: ${selName}` : `Supplier: ${selName}`
-                      }));
-                    }
-                  }}
-                >
-                  <option value="">Pumili mula sa registered suppliers...</option>
-                  {suppliers.map(s => (
-                    <option key={s.id} value={s.name}>{s.name} ({s.contact_person || 'Vendor'})</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Unit & Threshold */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Unit of Measure</label>
-                <input 
-                  type="text" 
-                  className="form-input-styled" 
-                  value={formData.unit || 'kg'} 
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })} 
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Low Stock Alert Threshold</label>
-                <input 
-                  type="number" 
-                  className="form-input-styled" 
-                  value={formData.low_stock_threshold} 
-                  onChange={(e) => setFormData({ ...formData, low_stock_threshold: e.target.value })} 
-                />
-              </div>
-            </div>
 
           </div>
 
@@ -1693,137 +1284,6 @@ const BatchModal = ({ item, categories, suppliers = [], onSave, onClose }) => {
               }}
             >
               I-record ang pasok
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-const SupplierModal = ({ supplier, onSave, onClose }) => {
-  const [formData, setFormData] = useState(supplier || {
-    name: '',
-    contact_person: '',
-    phone: '',
-    email: '',
-    address: '',
-    notes: '',
-    is_active: true
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!formData.name) {
-      alert('Pakipunan ang Supplier Company Name');
-      return;
-    }
-    onSave(formData);
-  };
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-dialog-box" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header-banner">
-          <h2>
-            <Truck size={22} color="#F9B700" />
-            {supplier ? `Edit Supplier: ${supplier.name}` : 'Magdagdag ng Bagong Supplier / Vendor'}
-          </h2>
-          <button className="modal-close-btn" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div className="modal-body-scroll">
-            <div className="form-group-item">
-              <label>Supplier Company Name *</label>
-              <input 
-                type="text"
-                className="form-input-styled"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., St. Helens Meat Products"
-                required
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-              <div className="form-group-item">
-                <label>Contact Person</label>
-                <input 
-                  type="text"
-                  className="form-input-styled"
-                  value={formData.contact_person || ''}
-                  onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                  placeholder="e.g., John Miller"
-                />
-              </div>
-
-              <div className="form-group-item">
-                <label>Phone / Hotline *</label>
-                <input 
-                  type="text"
-                  className="form-input-styled"
-                  value={formData.phone || ''}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="e.g., 09171234567"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group-item">
-              <label>Email Address</label>
-              <input 
-                type="email"
-                className="form-input-styled"
-                value={formData.email || ''}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="e.g., sales@sthelens.com"
-              />
-            </div>
-
-            <div className="form-group-item">
-              <label>Office / Warehouse Address</label>
-              <input 
-                type="text"
-                className="form-input-styled"
-                value={formData.address || ''}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="e.g., Pasig City, Metro Manila"
-              />
-            </div>
-
-            <div className="form-group-item">
-              <label>Brands Supplied / Notes</label>
-              <textarea 
-                className="form-input-styled"
-                style={{ resize: 'vertical', minHeight: '75px' }}
-                value={formData.notes || ''}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="e.g., High-end beef slabs (Shortloin, Ribeye, Wagyu)"
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <input 
-                type="checkbox"
-                id="chk_supp_active"
-                checked={Boolean(formData.is_active)}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                style={{ width: '18px', height: '18px', accentColor: '#0c250d', cursor: 'pointer' }}
-              />
-              <label htmlFor="chk_supp_active" style={{ fontWeight: 800, fontSize: '0.88rem', color: '#0c250d', cursor: 'pointer' }}>
-                Active Supplier (Palaging lalabas sa product dropdown)
-              </label>
-            </div>
-          </div>
-
-          <div className="modal-footer-bar">
-            <button type="button" className="btn-tool" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-new-batch">
-              <Save size={16} /> {supplier ? 'Save Changes' : 'Add Supplier'}
             </button>
           </div>
         </form>

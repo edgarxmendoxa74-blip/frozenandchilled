@@ -30,7 +30,7 @@ const Login = () => {
             });
             if (loginError) throw loginError;
             navigate('/admin/dashboard');
-        } catch (err) {
+        } catch {
             setError('Invalid credentials. Please try again.');
         }
     };

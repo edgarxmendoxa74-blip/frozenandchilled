@@ -133,49 +133,56 @@ body {
 
 /* ── Category Slider ──────────────────────────────────────── */
 .category-slider {
-  background: var(--primary-dark);
-  padding: 8px 0;
+  background: linear-gradient(135deg, #071708 0%, #0c250d 60%, #153e17 100%);
+  padding: 12px 0;
   position: sticky;
   top: 68px;
   z-index: 90;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1.5px solid rgba(249, 183, 0, 0.25);
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 .category-slider::-webkit-scrollbar { display: none; }
 
 .category-container {
   display: inline-flex;
-  gap: 8px;
-  padding: 0 16px;
+  gap: 10px;
+  padding: 0 20px;
   min-width: 100%;
   justify-content: center;
 }
 
 .cat-btn {
-  background: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.9);
-  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 0.75rem;
+  padding: 8px 18px;
+  font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: all 0.25s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: 'Outfit', sans-serif;
+  letter-spacing: 0.3px;
 }
 .cat-btn:hover {
-  background: rgba(255,255,255,0.22);
+  background: rgba(249, 183, 0, 0.18);
+  border-color: rgba(249, 183, 0, 0.5);
+  color: #FFE200;
+  transform: translateY(-1px);
 }
 .cat-btn.active {
-  background: var(--gold);
-  color: var(--primary-dark);
-  border-color: var(--gold);
-  box-shadow: 0 3px 10px rgba(255,226,0,0.4);
+  background: linear-gradient(135deg, #FFE200 0%, #f59e0b 100%);
+  color: #071708;
+  border-color: #FFE200;
+  font-weight: 900;
+  box-shadow: 0 4px 16px rgba(255, 226, 0, 0.45);
+  transform: scale(1.03);
 }
 
 /* ── Hero Section ─────────────────────────────────────────── */
@@ -244,32 +251,38 @@ body {
 .menu-category-heading {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 36px 0 16px;
-  padding-bottom: 10px;
-  border-bottom: 3px solid var(--primary);
+  justify-content: space-between;
+  gap: 14px;
+  margin: 44px 0 20px;
+  padding: 12px 18px;
+  background: linear-gradient(90deg, rgba(12, 37, 13, 0.04) 0%, transparent 100%);
+  border-left: 5px solid var(--primary-dark);
+  border-bottom: 2px solid rgba(30, 139, 0, 0.15);
+  border-radius: 0 14px 14px 0;
 }
-.menu-category-heading:first-child { margin-top: 8px; }
+.menu-category-heading:first-child { margin-top: 12px; }
 
 .menu-category-heading h2 {
   font-family: 'Outfit', sans-serif;
-  font-size: clamp(1.1rem, 3vw, 1.5rem);
+  font-size: clamp(1.15rem, 3.2vw, 1.55rem);
   font-weight: 900;
   color: var(--primary-dark);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
+  margin: 0;
 }
 
 .menu-category-badge {
-  background: var(--gold);
-  color: var(--primary-dark);
-  font-size: 0.7rem;
-  font-weight: 800;
-  padding: 3px 10px;
+  background: linear-gradient(135deg, #FFE200 0%, #f59e0b 100%);
+  color: #071708;
+  font-size: 0.75rem;
+  font-weight: 900;
+  padding: 4px 12px;
   border-radius: 999px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
   white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(249, 183, 0, 0.35);
 }
 
 /* Grid - Compact Layout */

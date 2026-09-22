@@ -75,7 +75,7 @@ const AdminDashboard = () => {
         return saved ? JSON.parse(saved) : [];
     });
 
-    const [orderTypes, setOrderTypes] = useState(() => {
+    const [_orderTypes, setOrderTypes] = useState(() => {
         const saved = localStorage.getItem('orderTypes');
         return saved ? JSON.parse(saved) : [
             { id: 'pickup', name: 'Pickup' },
@@ -107,7 +107,7 @@ const AdminDashboard = () => {
     const [deliveryLocations, setDeliveryLocations] = useState(() => {
         const saved = localStorage.getItem('deliveryLocations');
         if (saved) {
-            try { return JSON.parse(saved); } catch (e) {}
+            try { return JSON.parse(saved); } catch { /* ignore parse error */ }
         }
         return DEFAULT_DELIVERY_LOCATIONS;
     });
@@ -222,6 +222,57 @@ const AdminDashboard = () => {
         navigate('/admin');
     };
 
+    const getItemBoxes = (item) => {
+        if (!item) return [];
+        const totalStock = parseFloat(item.stock) || 0;
+        const isOutOfStock = Boolean(item.out_of_stock || totalStock <= 0);
+
+        if (Array.isArray(item.boxes) && item.boxes.length > 0) {
+            return item.boxes.map(b => ({
+                ...b,
+                disabled: isOutOfStock || Boolean(b.disabled || b.ordered) || (b.weight && b.weight > totalStock)
+            }));
+        }
+
+        if (Array.isArray(item.variations) && item.variations.length > 0) {
+            const hasBoxes = item.variations.some(v => v.weight || (v.name && (v.name.toLowerCase().includes('box') || v.name.toLowerCase().includes('slab') || v.name.toLowerCase().includes('sack') || v.name.toLowerCase().includes('pack'))));
+            if (hasBoxes) {
+                return item.variations.map((v, idx) => {
+                    const wt = v.weight || parseFloat(v.name.replace(/[^0-9.]/g, '')) || 25;
+                    return {
+                        id: v.id || `box-${idx + 1}`,
+                        name: v.name,
+                        weight: wt,
+                        disabled: isOutOfStock || Boolean(v.disabled || v.ordered) || wt > totalStock
+                    };
+                });
+            }
+        }
+
+        if (totalStock > 0 && !isOutOfStock) {
+            const unitName = (item.unit || 'kg').toLowerCase();
+            const prefix = (unitName === 'slab') ? 'Slab' : (unitName === 'sack') ? 'Sack' : (unitName === 'pack') ? 'Pack' : 'Box';
+
+            if (unitName === 'sack' || unitName === 'pack') {
+                return [
+                    { id: 'box-1', name: `${prefix} 1`, weight: 25, disabled: 25 > totalStock },
+                    { id: 'box-2', name: `${prefix} 2`, weight: 25, disabled: 25 > totalStock },
+                    { id: 'box-3', name: `${prefix} 3`, weight: 25, disabled: 25 > totalStock }
+                ];
+            }
+
+            const box1Weight = Number((totalStock * 0.3302).toFixed(3));
+            const box2Weight = Number((totalStock * 0.3261).toFixed(3));
+            const box3Weight = Number((totalStock - box1Weight - box2Weight).toFixed(3));
+            return [
+                { id: 'box-1', name: `${prefix} 1`, weight: box1Weight, disabled: box1Weight <= 0 || box1Weight > totalStock },
+                { id: 'box-2', name: `${prefix} 2`, weight: box2Weight, disabled: box2Weight <= 0 || box2Weight > totalStock },
+                { id: 'box-3', name: `${prefix} 3`, weight: box3Weight, disabled: box3Weight <= 0 || box3Weight > totalStock }
+            ].filter(b => b.weight > 0);
+        }
+        return [];
+    };
+
     // 
     // COMPONENT 1: MENU MANAGER (PRODUCT CATALOG MANAGEMENT)
     // 
@@ -232,12 +283,15 @@ const AdminDashboard = () => {
         const [tempVariations, setTempVariations] = useState([]);
         const [tempFlavors, setTempFlavors] = useState([]);
         const [tempAddons, setTempAddons] = useState([]);
+        const [tempBoxes, setTempBoxes] = useState([]);
 
         useEffect(() => {
             if (editingItem) {
                 setTempVariations(editingItem.variations || []);
                 setTempFlavors(editingItem.flavors || []);
                 setTempAddons(editingItem.addons || []);
+                const currentBoxes = editingItem.boxes && editingItem.boxes.length > 0 ? editingItem.boxes : getItemBoxes(editingItem);
+                setTempBoxes(currentBoxes);
             }
         }, [editingItem]);
 
@@ -249,17 +303,20 @@ const AdminDashboard = () => {
                 description: formData.get('description'),
                 price: Number(formData.get('price')),
                 promo_price: formData.get('promoPrice') ? Number(formData.get('promoPrice')) : null,
-                unit: formData.get('unit') || 'kg',
-                min_order_note: formData.get('minOrderNote') || '',
                 category_id: formData.get('categoryId'),
                 image: editingItem.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80',
                 variations: tempVariations,
                 flavors: tempFlavors,
                 addons: tempAddons,
-                stock: Number(formData.get('stock') || 0),
-                low_stock_threshold: Number(formData.get('lowStockThreshold') || 5),
-                out_of_stock: formData.get('outOfStock') === 'on' || Number(formData.get('stock') || 0) === 0
+                out_of_stock: formData.get('outOfStock') === 'on'
             };
+
+            if (editingItem.id === 'new') {
+                itemData.unit = 'kg';
+                itemData.stock = 0;
+                itemData.low_stock_threshold = 5;
+                itemData.boxes = [];
+            }
 
             let finalItem;
             if (editingItem.id === 'new') {
@@ -360,6 +417,7 @@ const AdminDashboard = () => {
                                 <th style={{ padding: '12px' }}>Product</th>
                                 <th style={{ padding: '12px' }}>Category</th>
                                 <th style={{ padding: '12px' }}>Price / Unit</th>
+                                <th style={{ padding: '12px' }}>Stock & Boxes</th>
                                 <th style={{ padding: '12px' }}>Variations & Add-ons</th>
                                 <th style={{ padding: '12px' }}>Min Order Tag</th>
                                 <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
@@ -367,7 +425,7 @@ const AdminDashboard = () => {
                         </thead>
                         <tbody>
                             {filteredItems.length === 0 ? (
-                                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No products found in catalog.</td></tr>
+                                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No products found in catalog.</td></tr>
                             ) : filteredItems.map(item => (
                                 <tr key={item.id} style={{ background: '#f8fafc' }}>
                                     <td style={{ padding: '12px 15px', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px' }}>
@@ -393,6 +451,26 @@ const AdminDashboard = () => {
                                         ) : (
                                             <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#0f172a' }}>{item.price} /{item.unit || 'kg'}</span>
                                         )}
+                                    </td>
+                                    <td style={{ padding: '12px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                            <span style={{ fontWeight: 800, fontSize: '0.82rem', color: item.out_of_stock || (item.stock || 0) <= 0 ? '#dc2626' : '#059669' }}>
+                                                {item.out_of_stock || (item.stock || 0) <= 0 ? 'Out of Stock' : `Stock: ${item.stock} ${item.unit || 'kg'}`}
+                                            </span>
+                                            {(() => {
+                                                const boxes = getItemBoxes(item).filter(b => !b.disabled && !b.ordered);
+                                                if (boxes.length === 0) return null;
+                                                return (
+                                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                                        {boxes.map((b, idx) => (
+                                                            <span key={b.id || idx} style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: '1px 6px', borderRadius: '6px', fontSize: '0.68rem', fontWeight: 700 }}>
+                                                                📦 {b.name}: {b.weight} kg
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
                                     </td>
                                     <td style={{ padding: '12px' }}>
                                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -471,157 +549,13 @@ const AdminDashboard = () => {
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '15px' }}>
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Price ()</label>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Price (₱)</label>
                                 <input name="price" type="number" step="0.01" defaultValue={editingItem.price} placeholder="1850" required style={inputStyle} />
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Promo Price ( - Optional)</label>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Promo Price (₱ - Optional)</label>
                                 <input name="promoPrice" type="number" step="0.01" defaultValue={editingItem.promo_price || ''} placeholder="Discount price" style={inputStyle} />
                             </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Unit</label>
-                                <input name="unit" defaultValue={editingItem.unit || 'kg'} placeholder="kg, slab, box, sack" required style={inputStyle} />
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Current Stock Qty</label>
-                                <input name="stock" type="number" defaultValue={editingItem.stock ?? 20} placeholder="Stock level" required style={inputStyle} />
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Low Stock Alert Threshold</label>
-                                <input name="lowStockThreshold" type="number" defaultValue={editingItem.low_stock_threshold || editingItem.lowStockThreshold || 5} placeholder="Alert limit" required style={inputStyle} />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Minimum Order Note / Tag (Optional)</label>
-                            <input name="minOrderNote" defaultValue={editingItem.min_order_note || editingItem.minOrderNote || ''} placeholder="e.g. Minimum 1 Slab, Wholesale min 1 box" style={inputStyle} />
-                        </div>
-
-                        {/* Variations Section */}
-                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: '#334155' }}>Product Variations (Size/Weight Options)</label>
-                                <button
-                                    type="button"
-                                    onClick={() => setTempVariations([...tempVariations, { name: '', price: 0, disabled: false }])}
-                                    style={{ background: '#059669', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                >
-                                    <Plus size={14} /> Add Variation
-                                </button>
-                            </div>
-                            {tempVariations.map((variation, index) => (
-                                <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. 1kg Box, 2kg Box"
-                                        value={variation.name}
-                                        onChange={(e) => {
-                                            const updated = [...tempVariations];
-                                            updated[index].name = e.target.value;
-                                            setTempVariations(updated);
-                                        }}
-                                        style={{ ...inputStyle, flex: 1, fontSize: '0.85rem' }}
-                                    />
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="Price"
-                                        value={variation.price}
-                                        onChange={(e) => {
-                                            const updated = [...tempVariations];
-                                            updated[index].price = Number(e.target.value);
-                                            setTempVariations(updated);
-                                        }}
-                                        style={{ ...inputStyle, width: '100px', fontSize: '0.85rem' }}
-                                    />
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={variation.disabled}
-                                            onChange={(e) => {
-                                                const updated = [...tempVariations];
-                                                updated[index].disabled = e.target.checked;
-                                                setTempVariations(updated);
-                                            }}
-                                        />
-                                        Disabled
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setTempVariations(tempVariations.filter((_, i) => i !== index))}
-                                        style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer' }}
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                            {tempVariations.length === 0 && (
-                                <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>
-                                    No variations added. Add variations for products with different sizes or weights.
-                                </p>
-                            )}
-                        </div>
-
-                        {/* Flavors/Options Section */}
-                        <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: '#334155' }}>Product Flavors/Options</label>
-                                <button
-                                    type="button"
-                                    onClick={() => setTempFlavors([...tempFlavors, { name: '', disabled: false }])}
-                                    style={{ background: '#059669', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                >
-                                    <Plus size={14} /> Add Flavor
-                                </button>
-                            </div>
-                            {tempFlavors.map((flavor, index) => (
-                                <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px' }}>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. Spicy, Mild, Original"
-                                        value={typeof flavor === 'string' ? flavor : flavor.name}
-                                        onChange={(e) => {
-                                            const updated = [...tempFlavors];
-                                            updated[index] = typeof flavor === 'string' 
-                                                ? e.target.value 
-                                                : { ...flavor, name: e.target.value };
-                                            setTempFlavors(updated);
-                                        }}
-                                        style={{ ...inputStyle, flex: 1, fontSize: '0.85rem' }}
-                                    />
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={typeof flavor === 'string' ? false : flavor.disabled}
-                                            onChange={(e) => {
-                                                const updated = [...tempFlavors];
-                                                if (typeof flavor === 'string') {
-                                                    updated[index] = { name: flavor, disabled: e.target.checked };
-                                                } else {
-                                                    updated[index] = { ...flavor, disabled: e.target.checked };
-                                                }
-                                                setTempFlavors(updated);
-                                            }}
-                                        />
-                                        Disabled
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setTempFlavors(tempFlavors.filter((_, i) => i !== index))}
-                                        style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer' }}
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                            {tempFlavors.length === 0 && (
-                                <p style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', margin: 0 }}>
-                                    No flavors added. Add flavors or options for products with different varieties.
-                                </p>
-                            )}
                         </div>
 
                         {/* Add-ons Section */}
@@ -688,6 +622,7 @@ const AdminDashboard = () => {
                                 </p>
                             )}
                         </div>
+
 
                         <div>
                             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Product Image</label>
@@ -869,8 +804,8 @@ const AdminDashboard = () => {
                     cd.delivery_location || '',
                     cd.address || '',
                     `"${items.replace(/"/g, '""')}"`,
-                    '',
-                    '',
+                    o.subtotal || '',
+                    deliveryCharge,
                     o.total_amount || '',
                     o.status || ''
                 ];
@@ -2153,11 +2088,6 @@ const SidebarItem = ({ icon, label, active, onClick, badge }) => (
         )}
     </button>
 );
-
-const quickBtnStyle = {
-    padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white',
-    color: '#0f172a', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer'
-};
 
 const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.92rem' };
 
