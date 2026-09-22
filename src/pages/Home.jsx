@@ -975,6 +975,15 @@ Thank you!`;
                                                 <div className="menu-item-list-card" key={item.id}
                                                     style={{ opacity: isItemOut ? 0.65 : 1, padding: '16px 20px' }}
                                                 >
+                                                    {/* Product Thumbnail */}
+                                                    <div className="menu-item-list-img-wrapper">
+                                                        <img
+                                                            src={item.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'}
+                                                            alt={item.name}
+                                                            className="menu-item-list-img"
+                                                            onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'; }}
+                                                        />
+                                                    </div>
                                                     {/* Middle Content */}
                                                     <div className="menu-item-list-content">
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
@@ -1085,6 +1094,15 @@ Thank you!`;
                                                 <div className="menu-item-list-card" key={item.id}
                                                     style={{ opacity: isItemOut ? 0.65 : 1, padding: '16px 20px' }}
                                                 >
+                                                    {/* Product Thumbnail */}
+                                                    <div className="menu-item-list-img-wrapper">
+                                                        <img
+                                                            src={item.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'}
+                                                            alt={item.name}
+                                                            className="menu-item-list-img"
+                                                            onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'; }}
+                                                        />
+                                                    </div>
                                                     <div className="menu-item-list-content">
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                                             <h3 className="menu-item-list-name">{item.name}</h3>
