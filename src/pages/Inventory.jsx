@@ -43,21 +43,38 @@ const getItemBoxes = (item) => {
     const prefix = (unitName === 'slab') ? 'Slab' : (unitName === 'sack') ? 'Sack' : (unitName === 'pack') ? 'Pack' : 'Box';
     
     if (unitName === 'sack' || unitName === 'pack') {
-      return [
-        { id: 'box-1', name: `${prefix} 1`, weight: 25, disabled: 25 > totalStock },
-        { id: 'box-2', name: `${prefix} 2`, weight: 25, disabled: 25 > totalStock },
-        { id: 'box-3', name: `${prefix} 3`, weight: 25, disabled: 25 > totalStock }
-      ];
+      // Maximum 6 boxes for sack/pack items
+      return Array.from({ length: 6 }, (_, i) => ({
+        id: `box-${i + 1}`,
+        name: `${prefix} ${i + 1}`,
+        weight: 25,
+        disabled: 25 > totalStock
+      }));
     }
 
-    const box1Weight = Number((totalStock * 0.3302).toFixed(3));
-    const box2Weight = Number((totalStock * 0.3261).toFixed(3));
-    const box3Weight = Number((totalStock - box1Weight - box2Weight).toFixed(3));
-    return [
-      { id: 'box-1', name: `${prefix} 1`, weight: box1Weight, disabled: box1Weight <= 0 || box1Weight > totalStock },
-      { id: 'box-2', name: `${prefix} 2`, weight: box2Weight, disabled: box2Weight <= 0 || box2Weight > totalStock },
-      { id: 'box-3', name: `${prefix} 3`, weight: box3Weight, disabled: box3Weight <= 0 || box3Weight > totalStock }
-    ].filter(b => b.weight > 0);
+    // Divide total stock into maximum 6 boxes
+    const numBoxes = Math.min(6, Math.ceil(totalStock / 10)); // At least 10kg per box, max 6 boxes
+    const boxes = [];
+    let remainingStock = totalStock;
+    const baseWeight = Number((totalStock / numBoxes).toFixed(3));
+    
+    for (let i = 0; i < numBoxes; i++) {
+      const isLastBox = i === numBoxes - 1;
+      // Last box gets all remaining stock to avoid rounding errors
+      const weight = isLastBox ? Number(remainingStock.toFixed(3)) : baseWeight;
+      
+      if (weight > 0) {
+        boxes.push({
+          id: `box-${i + 1}`,
+          name: `${prefix} ${i + 1}`,
+          weight: weight,
+          disabled: weight <= 0 || weight > totalStock
+        });
+        remainingStock = Number((remainingStock - weight).toFixed(3));
+      }
+    }
+    
+    return boxes.filter(b => b.weight > 0);
   }
   return [];
 };
@@ -396,6 +413,8 @@ const Inventory = () => {
   };
 
   const handleSaveItem = async (itemData) => {
+    console.log('🔄 Saving item with data:', itemData);
+    console.log('📦 Boxes being saved:', itemData.boxes);
     try {
       let savedItem;
       if (editingItem) {
@@ -1002,7 +1021,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
         pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
         price: b.price !== undefined ? b.price : '',
         disabled: Boolean(b.disabled),
-        ordered: Boolean(b.disabled)
+        ordered: Boolean(b.ordered || false) // Keep ordered separate from disabled
       }));
     }
 

@@ -138,6 +138,9 @@ const Home = () => {
     };
 
     // Load data from Supabase (merged with LocalStorage for real-time local updates)
+    // Add UUID validation helper
+    const isUUID = (str) => Boolean(str && typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
@@ -146,7 +149,21 @@ const Home = () => {
                 const savedCatsRaw = localStorage.getItem('categories');
                 let savedCatsList = [];
                 if (savedCatsRaw) {
-                    try { savedCatsList = JSON.parse(savedCatsRaw); } catch { /* ignore */ }
+                    try { 
+                        const parsed = JSON.parse(savedCatsRaw);
+                        // Check if saved categories have old string IDs and clear if so
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            const hasStringIds = parsed.some(cat => cat.id && !isUUID(cat.id));
+                            if (hasStringIds) {
+                                console.log('🧹 Found old string-based category IDs in Home, clearing localStorage');
+                                localStorage.removeItem('categories');
+                                localStorage.removeItem('menuItems');
+                                savedCatsList = [];
+                            } else {
+                                savedCatsList = parsed;
+                            }
+                        }
+                    } catch { /* ignore */ }
                 }
 
                 const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
@@ -366,7 +383,7 @@ const Home = () => {
         if (Array.isArray(item.boxes) && item.boxes.length > 0) {
             return item.boxes.map(b => ({
                 ...b,
-                disabled: isOutOfStock || Boolean(b.disabled || b.ordered) || (b.stockQty !== undefined && Number(b.stockQty) <= 0)
+                disabled: isOutOfStock || Boolean(b.disabled || b.ordered) || (b.stockQty !== undefined && Number(b.stockQty) < 1)
             }));
         }
 
@@ -390,21 +407,38 @@ const Home = () => {
             const prefix = (unitName === 'slab') ? 'Slab' : (unitName === 'sack') ? 'Sack' : (unitName === 'pack') ? 'Pack' : 'Box';
             
             if (unitName === 'sack' || unitName === 'pack') {
-                return [
-                    { id: 'box-1', name: `${prefix} 1`, weight: 25, disabled: 25 > totalStock },
-                    { id: 'box-2', name: `${prefix} 2`, weight: 25, disabled: 25 > totalStock },
-                    { id: 'box-3', name: `${prefix} 3`, weight: 25, disabled: 25 > totalStock }
-                ];
+                // Maximum 6 boxes for sack/pack items
+                return Array.from({ length: 6 }, (_, i) => ({
+                    id: `box-${i + 1}`,
+                    name: `${prefix} ${i + 1}`,
+                    weight: 25,
+                    disabled: 25 > totalStock
+                }));
             }
 
-            const box1Weight = Number((totalStock * 0.3302).toFixed(3));
-            const box2Weight = Number((totalStock * 0.3261).toFixed(3));
-            const box3Weight = Number((totalStock - box1Weight - box2Weight).toFixed(3));
-            return [
-                { id: 'box-1', name: `${prefix} 1`, weight: box1Weight, disabled: box1Weight <= 0 || box1Weight > totalStock },
-                { id: 'box-2', name: `${prefix} 2`, weight: box2Weight, disabled: box2Weight <= 0 || box2Weight > totalStock },
-                { id: 'box-3', name: `${prefix} 3`, weight: box3Weight, disabled: box3Weight <= 0 || box3Weight > totalStock }
-            ].filter(b => b.weight > 0);
+            // Divide total stock into maximum 6 boxes
+            const numBoxes = Math.min(6, Math.ceil(totalStock / 10)); // At least 10kg per box, max 6 boxes
+            const boxes = [];
+            let remainingStock = totalStock;
+            const baseWeight = Number((totalStock / numBoxes).toFixed(3));
+            
+            for (let i = 0; i < numBoxes; i++) {
+                const isLastBox = i === numBoxes - 1;
+                // Last box gets all remaining stock to avoid rounding errors
+                const weight = isLastBox ? Number(remainingStock.toFixed(3)) : baseWeight;
+                
+                if (weight > 0) {
+                    boxes.push({
+                        id: `box-${i + 1}`,
+                        name: `${prefix} ${i + 1}`,
+                        weight: weight,
+                        disabled: weight <= 0 || weight > totalStock
+                    });
+                    remainingStock = Number((remainingStock - weight).toFixed(3));
+                }
+            }
+            
+            return boxes.filter(b => b.weight > 0);
         }
         return [];
     };
@@ -835,8 +869,12 @@ Thank you!`;
                 </div>
             </header>
 
-            {/* Category Navigation Bar */}
-            <div className="category-slider">
+            {/* Enhanced Category Navigation Bar */}
+            <div className="category-slider" style={{ 
+                background: 'linear-gradient(135deg, rgba(30, 139, 0, 0.05) 0%, rgba(255, 226, 0, 0.05) 100%)',
+                borderBottom: '2px solid rgba(30, 139, 0, 0.1)',
+                padding: '12px 0'
+            }}>
                 <div className="category-container">
                     {categories.map(cat => (
                         <button
@@ -846,6 +884,14 @@ Thank you!`;
                                 setActiveCategory(cat.id);
                                 const el = document.getElementById(`cat-${cat.id}`);
                                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            style={{
+                                background: activeCategory === cat.id ? 'var(--primary)' : 'rgba(255, 255, 255, 0.8)',
+                                color: activeCategory === cat.id ? 'white' : 'var(--primary)',
+                                border: activeCategory === cat.id ? '2px solid var(--primary)' : '2px solid rgba(30, 139, 0, 0.2)',
+                                fontWeight: '700',
+                                transition: 'all 0.3s ease',
+                                boxShadow: activeCategory === cat.id ? '0 4px 12px rgba(30, 139, 0, 0.3)' : '0 2px 8px rgba(0,0,0,0.1)'
                             }}
                         >
                             {cat.name}
@@ -959,11 +1005,42 @@ Thank you!`;
                             }
                             if (catItems.length === 0) return null;
                             return (
-                                <div key={cat.id} id={`cat-${cat.id}`}>
-                                    {/* Category Section Heading */}
-                                    <div className="menu-category-heading">
-                                        <h2>{cat.name}</h2>
-                                        <span className="menu-category-badge">{catItems.length} item{catItems.length !== 1 ? 's' : ''}</span>
+                                <div key={cat.id} id={`cat-${cat.id}`} style={{ 
+                                    marginBottom: '40px', 
+                                    background: 'rgba(255, 255, 255, 0.8)',
+                                    borderRadius: '20px',
+                                    padding: '24px',
+                                    border: '1px solid rgba(30, 139, 0, 0.1)',
+                                    boxShadow: '0 4px 20px rgba(0,0,0,0.04)'
+                                }}>
+                                    {/* Enhanced Category Section Heading */}
+                                    <div className="menu-category-heading" style={{
+                                        background: 'linear-gradient(135deg, #1E8B00 0%, #28B400 100%)',
+                                        color: 'white',
+                                        padding: '16px 24px',
+                                        margin: '-24px -24px 24px -24px',
+                                        borderRadius: '20px 20px 0 0',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <div>
+                                            <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800' }}>{cat.name}</h2>
+                                            <p style={{ margin: '4px 0 0', opacity: 0.9, fontSize: '0.85rem' }}>
+                                                Premium wholesale quality meats & products
+                                            </p>
+                                        </div>
+                                        <span className="menu-category-badge" style={{
+                                            background: 'rgba(255, 255, 255, 0.2)',
+                                            color: 'white',
+                                            padding: '6px 12px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: '700',
+                                            border: '1px solid rgba(255, 255, 255, 0.3)'
+                                        }}>
+                                            {catItems.length} item{catItems.length !== 1 ? 's' : ''}
+                                        </span>
                                     </div>
 
                                     {/* Items List Format */}
@@ -1081,10 +1158,41 @@ Thank you!`;
                             
                             if (orphanItems.length === 0) return null;
                             return (
-                                <div id="cat-other">
-                                    <div className="menu-category-heading">
-                                        <h2>Other Premium Selections</h2>
-                                        <span className="menu-category-badge">{orphanItems.length} item{orphanItems.length !== 1 ? 's' : ''}</span>
+                                <div id="cat-other" style={{ 
+                                    marginBottom: '40px', 
+                                    background: 'rgba(255, 255, 255, 0.8)',
+                                    borderRadius: '20px',
+                                    padding: '24px',
+                                    border: '1px solid rgba(255, 226, 0, 0.3)',
+                                    boxShadow: '0 4px 20px rgba(0,0,0,0.04)'
+                                }}>
+                                    <div className="menu-category-heading" style={{
+                                        background: 'linear-gradient(135deg, #FFE200 0%, #D4BB00 100%)',
+                                        color: '#071708',
+                                        padding: '16px 24px',
+                                        margin: '-24px -24px 24px -24px',
+                                        borderRadius: '20px 20px 0 0',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <div>
+                                            <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800' }}>Other Premium Selections</h2>
+                                            <p style={{ margin: '4px 0 0', opacity: 0.8, fontSize: '0.85rem' }}>
+                                                Additional quality products & specialty items
+                                            </p>
+                                        </div>
+                                        <span className="menu-category-badge" style={{
+                                            background: 'rgba(7, 23, 8, 0.1)',
+                                            color: '#071708',
+                                            padding: '6px 12px',
+                                            borderRadius: '20px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: '700',
+                                            border: '1px solid rgba(7, 23, 8, 0.2)'
+                                        }}>
+                                            {orphanItems.length} item{orphanItems.length !== 1 ? 's' : ''}
+                                        </span>
                                     </div>
                                     <div className="menu-list-container">
                                         {orphanItems.map(item => {

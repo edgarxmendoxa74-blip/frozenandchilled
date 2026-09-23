@@ -196,10 +196,10 @@ UPDATE categories SET sort_order = 5 WHERE name LIKE 'Sides%';
 UPDATE categories SET sort_order = 6 WHERE name LIKE 'Ready to Cook%';
 UPDATE categories SET sort_order = 7 WHERE name LIKE 'Rice%';
 
--- CLEANUP SECTION (Uncomment to reset all data)
--- DELETE FROM orders;
--- DELETE FROM menu_items;
--- DELETE FROM categories;
+-- CLEANUP SECTION (Execute these commands to reset all data)
+DELETE FROM orders;
+DELETE FROM menu_items;
+DELETE FROM categories;
 -- DELETE FROM payment_settings;
 -- DELETE FROM store_settings;
 -- DELETE FROM order_types;

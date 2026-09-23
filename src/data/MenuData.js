@@ -1,18 +1,18 @@
 export const categories = [
-    { id: 'high-end-beef', name: 'High End Beef (Min 1 Slab)' },
-    { id: 'beef-wholesale', name: 'Beef Wholesale (Min 1 Box)' },
-    { id: 'pork-wholesale', name: 'Pork Wholesale (Min 1 Box)' },
-    { id: 'chicken-wholesale', name: 'Chicken Wholesale (Min 1 Box)' },
-    { id: 'sides-others', name: 'Sides & Seafood (Min 1 Box)' },
-    { id: 'ready-to-cook', name: 'Ready to Cook' },
-    { id: 'rice', name: 'Rice (25kls)' },
+    { id: '550e8400-e29b-41d4-a716-446655440001', name: 'High End Beef (Min 1 Slab)', sort_order: 1 },
+    { id: '550e8400-e29b-41d4-a716-446655440002', name: 'Beef Wholesale (Min 1 Box)', sort_order: 2 },
+    { id: '550e8400-e29b-41d4-a716-446655440003', name: 'Pork Wholesale (Min 1 Box)', sort_order: 3 },
+    { id: '550e8400-e29b-41d4-a716-446655440004', name: 'Chicken Wholesale (Min 1 Box)', sort_order: 4 },
+    { id: '550e8400-e29b-41d4-a716-446655440005', name: 'Sides & Seafood (Min 1 Box)', sort_order: 5 },
+    { id: '550e8400-e29b-41d4-a716-446655440006', name: 'Ready to Cook', sort_order: 6 },
+    { id: '550e8400-e29b-41d4-a716-446655440007', name: 'Rice (25kls)', sort_order: 7 },
 ];
 
 export const menuItems = [
     // High End Beef (Minimum 1 SLAB)
     {
         id: 1,
-        categoryId: 'high-end-beef',
+        categoryId: '550e8400-e29b-41d4-a716-446655440001',
         name: 'Beef Shortloin St. Helens',
         description: 'High-end beef slab. Minimum 1 Slab.',
         price: 1850,
@@ -24,7 +24,7 @@ export const menuItems = [
     },
     {
         id: 2,
-        categoryId: 'high-end-beef',
+        categoryId: '550e8400-e29b-41d4-a716-446655440001',
         name: 'US Wagyu Chuck Eye Roll',
         description: 'Premium US Wagyu Chuck Eye Roll slab. Minimum 1 Slab.',
         price: 1750,
@@ -36,7 +36,7 @@ export const menuItems = [
     },
     {
         id: 3,
-        categoryId: 'high-end-beef',
+        categoryId: '550e8400-e29b-41d4-a716-446655440001',
         name: 'Ribeye Choice Grade Excel',
         description: 'Choice Grade Excel Ribeye slab. Minimum 1 Slab.',
         price: 2250,
@@ -50,7 +50,7 @@ export const menuItems = [
     // Chicken Wholesale (Minimum 1 Box)
     {
         id: 4,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Whole Chicken 1kg',
         description: 'Fresh whole dressed chicken (1kg). Minimum 1 Box.',
         price: 180,
@@ -62,7 +62,7 @@ export const menuItems = [
     },
     {
         id: 5,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Chicken Wings Seara',
         description: 'Seara premium chicken wings. Minimum 1 Box.',
         price: 210,
@@ -74,7 +74,7 @@ export const menuItems = [
     },
     {
         id: 6,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Chicken Wings NAT',
         description: 'NAT quality chicken wings. Minimum 1 Box.',
         price: 215,
@@ -86,7 +86,7 @@ export const menuItems = [
     },
     {
         id: 7,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Chicken Quarter Leg AJC',
         description: 'AJC Chicken Quarter Legs. Minimum 1 Box.',
         price: 160,
@@ -98,7 +98,7 @@ export const menuItems = [
     },
     {
         id: 8,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Chicken Leg Fillet Levo',
         description: 'Levo boneless chicken leg fillet. Minimum 1 Box.',
         price: 230,
@@ -110,7 +110,7 @@ export const menuItems = [
     },
     {
         id: 9,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Chicken Breast Fillet Seara',
         description: 'Seara skinless chicken breast fillet. Minimum 1 Box.',
         price: 280,
@@ -122,7 +122,7 @@ export const menuItems = [
     },
     {
         id: 10,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Chicken Thigh Marjac',
         description: 'Marjac juicy chicken thighs. Minimum 1 Box.',
         price: 155,
@@ -134,7 +134,7 @@ export const menuItems = [
     },
     {
         id: 11,
-        categoryId: 'chicken-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440004',
         name: 'Chicken Skin Copacol',
         description: 'Copacol clean chicken skin. Minimum 1 Box.',
         price: 99,
@@ -148,7 +148,7 @@ export const menuItems = [
     // Beef Wholesale (Minimum 1 Box)
     {
         id: 12,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Shortplate Excel',
         description: 'Excel Beef Shortplate for samgyupsal / yakiniku. Minimum 1 Box.',
         price: 560,
@@ -160,7 +160,7 @@ export const menuItems = [
     },
     {
         id: 13,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Shortplate Swift',
         description: 'Swift premium Beef Shortplate. Minimum 1 Box.',
         price: 535,
@@ -172,7 +172,7 @@ export const menuItems = [
     },
     {
         id: 14,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Brisket Bonein Greenham',
         description: 'Greenham Bone-in Beef Brisket. Minimum 1 Box.',
         price: 178,
@@ -184,7 +184,7 @@ export const menuItems = [
     },
     {
         id: 15,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Shank Bonein Frimsa',
         description: 'Frimsa Bone-in Beef Shank for bulalo. Minimum 1 Box.',
         price: 375,
@@ -196,7 +196,7 @@ export const menuItems = [
     },
     {
         id: 16,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Forequarter Mondelli',
         description: 'Mondelli Beef Forequarter cuts. Minimum 1 Box.',
         price: 425,
@@ -208,7 +208,7 @@ export const menuItems = [
     },
     {
         id: 17,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Trimmings Mondelli',
         description: 'Mondelli Beef Trimmings. Minimum 1 Box.',
         price: 335,
@@ -225,7 +225,7 @@ export const menuItems = [
     },
     {
         id: 18,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Tail / Oxtail Madeka',
         description: 'Madeka fresh Oxtail for Kare-kare. Minimum 1 Box.',
         price: 292,
@@ -237,7 +237,7 @@ export const menuItems = [
     },
     {
         id: 19,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Bone Marrow Hutten',
         description: 'Hutten rich Beef Bone Marrow cuts. Minimum 1 Box.',
         price: 280,
@@ -249,7 +249,7 @@ export const menuItems = [
     },
     {
         id: 20,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Beef Tripe Throsby',
         description: 'Throsby cleaned Beef Tripe. Minimum 1 Box.',
         price: 186,
@@ -261,7 +261,7 @@ export const menuItems = [
     },
     {
         id: 21,
-        categoryId: 'beef-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440002',
         name: 'Ground Beef',
         description: 'Quality Ground Beef lean mix. Minimum 1 Box.',
         price: 269,
@@ -275,7 +275,7 @@ export const menuItems = [
     // Pork Wholesale (Minimum 1 Box)
     {
         id: 22,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Belly BLSO Aurora',
         description: 'Aurora Boneless Skin-On Pork Belly. Minimum 1 Box.',
         price: 283,
@@ -287,7 +287,7 @@ export const menuItems = [
     },
     {
         id: 23,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Belly BLSO Seara',
         description: 'Seara Boneless Skin-On Pork Belly. Minimum 1 Box.',
         price: 278,
@@ -299,7 +299,7 @@ export const menuItems = [
     },
     {
         id: 24,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Belly BISO Bernard Jean',
         description: 'Bernard Jean Bone-In Skin-On Pork Belly. Minimum 1 Box.',
         price: 270,
@@ -311,7 +311,7 @@ export const menuItems = [
     },
     {
         id: 25,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Belly BISO Dahlia',
         description: 'Dahlia Bone-In Skin-On Pork Belly. Minimum 1 Box.',
         price: 268,
@@ -323,7 +323,7 @@ export const menuItems = [
     },
     {
         id: 26,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Porkloin BISL Seara',
         description: 'Seara Bone-In Skinless Pork Loin. Minimum 1 Box.',
         price: 193,
@@ -335,7 +335,7 @@ export const menuItems = [
     },
     {
         id: 27,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Porkloin BLSL Saudali',
         description: 'Saudali Boneless Skinless Pork Loin. Minimum 1 Box.',
         price: 239,
@@ -347,7 +347,7 @@ export const menuItems = [
     },
     {
         id: 28,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Spareribs Frimesa',
         description: 'Frimesa Pork Spareribs. Minimum 1 Box.',
         price: 281,
@@ -359,7 +359,7 @@ export const menuItems = [
     },
     {
         id: 29,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Collar Sadia',
         description: 'Sadia Pork Collar cut. Minimum 1 Box.',
         price: 210,
@@ -371,7 +371,7 @@ export const menuItems = [
     },
     {
         id: 30,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Hamleg BLSL Alibem',
         description: 'Alibem Boneless Skinless Pork Hamleg. Minimum 1 Box.',
         price: 213,
@@ -383,7 +383,7 @@ export const menuItems = [
     },
     {
         id: 31,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Hamleg BISO Alibem',
         description: 'Alibem Bone-In Skin-On Pork Hamleg. Minimum 1 Box.',
         price: 168,
@@ -395,7 +395,7 @@ export const menuItems = [
     },
     {
         id: 32,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Kasim My Pork',
         description: 'My Pork Kasim cuts. Minimum 1 Box.',
         price: 206,
@@ -407,7 +407,7 @@ export const menuItems = [
     },
     {
         id: 33,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Riblets Olymel',
         description: 'Olymel Pork Riblets. Minimum 1 Box.',
         price: 158,
@@ -419,7 +419,7 @@ export const menuItems = [
     },
     {
         id: 34,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Liver Compaxo',
         description: 'Compaxo Pork Liver. Minimum 1 Box.',
         price: 87,
@@ -431,7 +431,7 @@ export const menuItems = [
     },
     {
         id: 35,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Liver Dahlia 12kls',
         description: 'Dahlia Pork Liver (12kg pack). Minimum 1 Box.',
         price: 87,
@@ -443,7 +443,7 @@ export const menuItems = [
     },
     {
         id: 36,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Jowls Vion',
         description: 'Vion Pork Jowls. Minimum 1 Box.',
         price: 204,
@@ -455,7 +455,7 @@ export const menuItems = [
     },
     {
         id: 37,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Jowls Frescos',
         description: 'Frescos Pork Jowls. Minimum 1 Box.',
         price: 201,
@@ -467,7 +467,7 @@ export const menuItems = [
     },
     {
         id: 38,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Mask Pamplona',
         description: 'Pamplona Pork Mask (Ulo/Ear/Jowl). Minimum 1 Box.',
         price: 157,
@@ -479,7 +479,7 @@ export const menuItems = [
     },
     {
         id: 39,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pata Front Conestoga',
         description: 'Conestoga Front Pork Pata. Minimum 1 Box.',
         price: 176,
@@ -491,7 +491,7 @@ export const menuItems = [
     },
     {
         id: 40,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pata Front Norwest',
         description: 'Norwest Front Pork Pata. Minimum 1 Box.',
         price: 178,
@@ -503,7 +503,7 @@ export const menuItems = [
     },
     {
         id: 41,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pata Hock Sadia',
         description: 'Sadia Pork Pata Hock. Minimum 1 Box.',
         price: 173,
@@ -515,7 +515,7 @@ export const menuItems = [
     },
     {
         id: 42,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pupor Vanroi',
         description: 'Vanroi Pork Pupor. Minimum 1 Box.',
         price: 161,
@@ -527,7 +527,7 @@ export const menuItems = [
     },
     {
         id: 43,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Pork Cutting Fat Skiba',
         description: 'Skiba Pork Cutting Fat. Minimum 1 Box.',
         price: 130,
@@ -539,7 +539,7 @@ export const menuItems = [
     },
     {
         id: 44,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Flowerfat Westfort',
         description: 'Westfort Flowerfat / Pork Fat. Minimum 1 Box.',
         price: 139,
@@ -551,7 +551,7 @@ export const menuItems = [
     },
     {
         id: 45,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Flowerfat Compaxo',
         description: 'Compaxo Flowerfat / Pork Fat. Minimum 1 Box.',
         price: 139,
@@ -563,7 +563,7 @@ export const menuItems = [
     },
     {
         id: 46,
-        categoryId: 'pork-wholesale',
+        categoryId: '550e8400-e29b-41d4-a716-446655440003',
         name: 'Flowerfat Agrosuper',
         description: 'Agrosuper Flowerfat / Pork Fat. Minimum 1 Box.',
         price: 137,
@@ -577,7 +577,7 @@ export const menuItems = [
     // Sides & Seafood Wholesale
     {
         id: 47,
-        categoryId: 'sides-others',
+        categoryId: '550e8400-e29b-41d4-a716-446655440005',
         name: 'French Fries Kitchen Saver',
         description: 'Kitchen Saver Frozen French Fries. Minimum 1 Box.',
         price: 105,
@@ -589,7 +589,7 @@ export const menuItems = [
     },
     {
         id: 48,
-        categoryId: 'sides-others',
+        categoryId: '550e8400-e29b-41d4-a716-446655440005',
         name: 'Creamdory Fillet',
         description: 'Frozen Creamdory Fish Fillet. Minimum 1 Box.',
         price: 120,
@@ -603,7 +603,7 @@ export const menuItems = [
     // Rice (25kls)
     {
         id: 49,
-        categoryId: 'rice',
+        categoryId: '550e8400-e29b-41d4-a716-446655440007',
         name: 'Master Chef Rice (25kg)',
         description: 'Master Chef Premium Quality Rice 25kg Sack.',
         price: 1580,
@@ -615,7 +615,7 @@ export const menuItems = [
     },
     {
         id: 50,
-        categoryId: 'rice',
+        categoryId: '550e8400-e29b-41d4-a716-446655440007',
         name: 'Perfect Hasmin Blue Rice (25kg)',
         description: 'Perfect Hasmin Blue Fragrant Rice 25kg Sack.',
         price: 1540,

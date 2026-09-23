@@ -37,6 +37,18 @@ import { categories as initialCategories, menuItems as initialItems } from '../d
 const AdminDashboard = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('menu'); // menu, categories, orders, orderTypes, payment, settings
+    
+    // Safe tab switching with validation
+    const switchTab = (tabName) => {
+        const validTabs = ['menu', 'categories', 'orders', 'orderTypes', 'payment', 'settings'];
+        if (validTabs.includes(tabName)) {
+            setActiveTab(tabName);
+            console.log(`Switched to tab: ${tabName}`);
+        } else {
+            console.error(`Invalid tab: ${tabName}`);
+            showMessage(`Error: Invalid tab "${tabName}"`);
+        }
+    };
     const [message, setMessage] = useState('');
 
     // --- STATE MANAGEMENT ---
@@ -159,14 +171,46 @@ const AdminDashboard = () => {
     useEffect(() => {
         const fetchAdminData = async () => {
             try {
+                // Clear old localStorage categories if they have string IDs to force reload with UUIDs
+                const savedCategories = localStorage.getItem('categories');
+                if (savedCategories) {
+                    try {
+                        const parsed = JSON.parse(savedCategories);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            // Check if any category has a non-UUID ID
+                            const hasStringIds = parsed.some(cat => cat.id && !isUUID(cat.id));
+                            if (hasStringIds) {
+                                console.log('🧹 Found old string-based category IDs, clearing localStorage to reload with UUIDs');
+                                localStorage.removeItem('categories');
+                                localStorage.removeItem('menuItems'); // Also clear menu items as they reference categories
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Error parsing saved categories, clearing localStorage');
+                        localStorage.removeItem('categories');
+                    }
+                }
+
                 const { data: catData } = await supabase.from('categories').select('*').order('sort_order', { ascending: true });
                 if (catData && catData.length > 0) {
                     setCategories(catData);
                     localStorage.setItem('categories', JSON.stringify(catData));
+                } else {
+                    // No categories in database, use fallback from MenuData.js with UUIDs
+                    console.log('📦 No categories in database, using MenuData.js fallback with UUIDs');
+                    setCategories(initialCategories);
+                    localStorage.setItem('categories', JSON.stringify(initialCategories));
                 }
 
                 const { data: itemData } = await supabase.from('menu_items').select('*').order('sort_order', { ascending: true });
-                if (itemData && itemData.length > 0) setItems(itemData.map(normalizeItem));
+                if (itemData && itemData.length > 0) {
+                    setItems(itemData.map(normalizeItem));
+                } else {
+                    // No items in database, use fallback from MenuData.js with UUID category references
+                    console.log('📦 No menu items in database, using MenuData.js fallback with UUID category references');
+                    setItems(initialItems.map(normalizeItem));
+                    localStorage.setItem('menuItems', JSON.stringify(initialItems.map(normalizeItem)));
+                }
 
                 const { data: payData } = await supabase.from('payment_settings').select('*');
                 if (payData && payData.length > 0) {
@@ -217,9 +261,16 @@ const AdminDashboard = () => {
     };
 
     const handleLogout = async () => {
-        localStorage.removeItem('admin_bypass');
-        await supabase.auth.signOut();
-        navigate('/admin');
+        try {
+            localStorage.removeItem('admin_bypass');
+            await supabase.auth.signOut();
+            console.log('Admin logged out successfully');
+            navigate('/admin');
+        } catch (error) {
+            console.error('Logout error:', error);
+            // Force redirect even if signOut fails
+            navigate('/admin');
+        }
     };
 
     const getItemBoxes = (item) => {
@@ -254,21 +305,38 @@ const AdminDashboard = () => {
             const prefix = (unitName === 'slab') ? 'Slab' : (unitName === 'sack') ? 'Sack' : (unitName === 'pack') ? 'Pack' : 'Box';
 
             if (unitName === 'sack' || unitName === 'pack') {
-                return [
-                    { id: 'box-1', name: `${prefix} 1`, weight: 25, disabled: 25 > totalStock },
-                    { id: 'box-2', name: `${prefix} 2`, weight: 25, disabled: 25 > totalStock },
-                    { id: 'box-3', name: `${prefix} 3`, weight: 25, disabled: 25 > totalStock }
-                ];
+                // Maximum 6 boxes for sack/pack items
+                return Array.from({ length: 6 }, (_, i) => ({
+                    id: `box-${i + 1}`,
+                    name: `${prefix} ${i + 1}`,
+                    weight: 25,
+                    disabled: 25 > totalStock
+                }));
             }
 
-            const box1Weight = Number((totalStock * 0.3302).toFixed(3));
-            const box2Weight = Number((totalStock * 0.3261).toFixed(3));
-            const box3Weight = Number((totalStock - box1Weight - box2Weight).toFixed(3));
-            return [
-                { id: 'box-1', name: `${prefix} 1`, weight: box1Weight, disabled: box1Weight <= 0 || box1Weight > totalStock },
-                { id: 'box-2', name: `${prefix} 2`, weight: box2Weight, disabled: box2Weight <= 0 || box2Weight > totalStock },
-                { id: 'box-3', name: `${prefix} 3`, weight: box3Weight, disabled: box3Weight <= 0 || box3Weight > totalStock }
-            ].filter(b => b.weight > 0);
+            // Divide total stock into maximum 6 boxes
+            const numBoxes = Math.min(6, Math.ceil(totalStock / 10)); // At least 10kg per box, max 6 boxes
+            const boxes = [];
+            let remainingStock = totalStock;
+            const baseWeight = Number((totalStock / numBoxes).toFixed(3));
+            
+            for (let i = 0; i < numBoxes; i++) {
+                const isLastBox = i === numBoxes - 1;
+                // Last box gets all remaining stock to avoid rounding errors
+                const weight = isLastBox ? Number(remainingStock.toFixed(3)) : baseWeight;
+                
+                if (weight > 0) {
+                    boxes.push({
+                        id: `box-${i + 1}`,
+                        name: `${prefix} ${i + 1}`,
+                        weight: weight,
+                        disabled: weight <= 0 || weight > totalStock
+                    });
+                    remainingStock = Number((remainingStock - weight).toFixed(3));
+                }
+            }
+            
+            return boxes.filter(b => b.weight > 0);
         }
         return [];
     };
@@ -661,65 +729,226 @@ const AdminDashboard = () => {
     // 
     const CategoryManager = () => {
         const [editingCat, setEditingCat] = useState(null);
+        const [isLoading, setIsLoading] = useState(false);
+
+        // Check if category name already exists
+        const isDuplicateName = (name, excludeId = null) => {
+            return categories.some(cat => 
+                cat.name.toLowerCase().trim() === name.toLowerCase().trim() && 
+                cat.id !== excludeId
+            );
+        };
+
+        // Count items in category
+        const getCategoryItemCount = (categoryId) => {
+            return items.filter(item => 
+                item.category_id === categoryId || 
+                item.categoryId === categoryId
+            ).length;
+        };
 
         const handleSaveCat = async (e) => {
             e.preventDefault();
+            setIsLoading(true);
+            
             const formData = new FormData(e.target);
             const name = formData.get('name')?.trim();
-            if (!name) return;
+            
+            // Validation
+            if (!name) {
+                showMessage('❌ Category name cannot be empty!');
+                setIsLoading(false);
+                return;
+            }
+
+            if (name.length < 2) {
+                showMessage('❌ Category name must be at least 2 characters long!');
+                setIsLoading(false);
+                return;
+            }
+
+            if (isDuplicateName(name, editingCat?.id)) {
+                showMessage('❌ Category with this name already exists!');
+                setIsLoading(false);
+                return;
+            }
 
             let savedCat;
             if (editingCat.id === 'new') {
                 try {
-                    const { data, error } = await supabase.from('categories').insert([{ name, sort_order: categories.length + 1 }]).select().single();
+                    const { data, error } = await supabase
+                        .from('categories')
+                        .insert([{ name, sort_order: categories.length + 1 }])
+                        .select()
+                        .single();
+                    
                     if (error) throw error;
                     savedCat = data;
+                    console.log('✅ Category created successfully:', data);
                 } catch (err) {
-                    console.log('Supabase category insert notice:', err);
+                    console.error('❌ Supabase category insert error:', err);
+                    showMessage(`❌ Error saving category: ${err.message || 'Database connection issue'}`);
+                    // Fallback to local storage
                     savedCat = { id: 'cat_' + Date.now(), name, sort_order: categories.length + 1 };
                 }
+                
                 const updated = [...categories, savedCat];
                 setCategories(updated);
                 localStorage.setItem('categories', JSON.stringify(updated));
+                showMessage('✅ Category created successfully!');
             } else {
                 try {
                     let res;
                     if (isUUID(editingCat.id)) {
-                        res = await supabase.from('categories').update({ name }).eq('id', editingCat.id).select().single();
+                        res = await supabase
+                            .from('categories')
+                            .update({ name })
+                            .eq('id', editingCat.id)
+                            .select()
+                            .single();
                     } else {
-                        res = await supabase.from('categories').update({ name }).eq('name', editingCat.name).select().single();
+                        res = await supabase
+                            .from('categories')
+                            .update({ name })
+                            .eq('name', editingCat.name)
+                            .select()
+                            .single();
                     }
+                    
                     if (res.error) throw res.error;
                     savedCat = res.data;
+                    console.log('✅ Category updated successfully:', res.data);
                 } catch (err) {
-                    console.log('Supabase category update notice:', err);
+                    console.error('❌ Supabase category update error:', err);
+                    showMessage(`❌ Error updating category: ${err.message || 'Database connection issue'}`);
+                    // Fallback to local update
                     savedCat = { ...editingCat, name };
                 }
-                const updated = categories.map(c => c.id === editingCat.id || c.name === editingCat.name ? { ...c, ...savedCat } : c);
+                
+                const updated = categories.map(c => 
+                    c.id === editingCat.id || c.name === editingCat.name ? 
+                    { ...c, ...savedCat } : c
+                );
                 setCategories(updated);
                 localStorage.setItem('categories', JSON.stringify(updated));
+                showMessage('✅ Category updated successfully!');
             }
+            
             setEditingCat(null);
-            showMessage('Category saved successfully!');
+            setIsLoading(false);
         };
 
         const deleteCat = async (id) => {
-            if (window.confirm(' WARNING: Deleting this category will PERMANENTLY DELETE all products inside it. This cannot be undone. Continue?')) {
-                const target = categories.find(c => c.id === id);
-                try {
-                    if (isUUID(id)) {
-                        await supabase.from('categories').delete().eq('id', id);
-                    } else if (target) {
-                        await supabase.from('categories').delete().eq('name', target.name);
-                    }
-                } catch (err) {
-                    console.log('Supabase category delete notice:', err);
-                }
-                const updated = categories.filter(c => c.id !== id);
-                setCategories(updated);
-                localStorage.setItem('categories', JSON.stringify(updated));
-                showMessage('Category deleted.');
+            console.log('🚀 Delete function called with ID:', id);
+            
+            const target = categories.find(c => c.id === id);
+            console.log('🎯 Target category found:', target);
+            
+            if (!target) {
+                console.error('❌ Category not found with ID:', id);
+                showMessage('❌ Category not found!');
+                return;
             }
+
+            // Check if this is a UUID or string ID from MenuData.js fallback
+            const isValidUUID = isUUID(id);
+            console.log('🔍 ID validation - Is UUID:', isValidUUID, 'ID:', id);
+
+            const itemCount = getCategoryItemCount(id);
+            console.log('📊 Item count in category:', itemCount);
+            
+            // Enhanced confirmation message for CASCADE delete
+            const confirmMessage = itemCount > 0 
+                ? `⚠️ WARNING: This category "${target.name}" contains ${itemCount} product(s).\n\n🚨 IMPORTANT: Deleting this category will PERMANENTLY DELETE all ${itemCount} product(s) inside it due to database constraints.\n\nThis action cannot be undone. Continue?`
+                : `Delete category "${target.name}"?\n\nThis action cannot be undone.`;
+
+            console.log('❓ Showing confirmation dialog');
+            const confirmed = window.confirm(confirmMessage);
+            console.log('✅ User confirmed:', confirmed);
+            
+            if (!confirmed) {
+                console.log('❌ User cancelled deletion');
+                return;
+            }
+
+            console.log('⏳ Starting delete operation...');
+            setIsLoading(true);
+            
+            try {
+                let deleteResult;
+                
+                // Only try database delete if we have a valid UUID
+                if (isValidUUID) {
+                    console.log('🗑️ Attempting database delete with UUID:', id);
+                    
+                    deleteResult = await supabase
+                        .from('categories')
+                        .delete()
+                        .eq('id', id);
+                    
+                    console.log('📝 Delete result:', deleteResult);
+                    
+                    if (deleteResult?.error) {
+                        console.error('❌ Supabase delete error:', deleteResult.error);
+                        
+                        // Check if it's a foreign key constraint error
+                        if (deleteResult.error.message?.includes('foreign key') || deleteResult.error.code === '23503') {
+                            showMessage(`❌ Cannot delete category: It still contains products. All products in this category will be deleted automatically.`);
+                        } else if (deleteResult.error.code === 'PGRST116') {
+                            console.log('⚠️ Category not found in database, cleaning up locally');
+                        } else {
+                            showMessage(`❌ Error deleting category: ${deleteResult.error.message}`);
+                            setIsLoading(false);
+                            return;
+                        }
+                    } else {
+                        console.log('✅ Database delete successful');
+                    }
+                } else {
+                    console.log('⚠️ Non-UUID category ID detected, this is likely from MenuData.js fallback. Skipping database delete.');
+                    console.log('💡 This category will be removed from local state only.');
+                }
+                
+            } catch (err) {
+                console.error('❌ Exception during delete:', err);
+                showMessage(`❌ Error deleting category: ${err.message || 'Unknown error'}`);
+                setIsLoading(false);
+                return;
+            }
+            
+            console.log('🔄 Updating local state...');
+            
+            // Update local state - remove the deleted category
+            const updated = categories.filter(c => c.id !== id);
+            console.log('📝 Filtered categories:', updated.length, 'remaining');
+            
+            // Re-order remaining categories
+            const reordered = updated.map((cat, index) => ({
+                ...cat,
+                sort_order: index + 1
+            }));
+            
+            setCategories(reordered);
+            localStorage.setItem('categories', JSON.stringify(reordered));
+            console.log('💾 Local state updated');
+            
+            // Also clean up items from local state if they were cascade deleted
+            const updatedItems = items.filter(item => 
+                item.category_id !== id && 
+                item.categoryId !== id
+            );
+            setItems(updatedItems);
+            localStorage.setItem('menuItems', JSON.stringify(updatedItems));
+            console.log('🧹 Items cleaned up, removed:', items.length - updatedItems.length, 'items');
+            
+            if (itemCount > 0) {
+                showMessage(`✅ Category "${target.name}" and ${itemCount} product(s) deleted successfully!`);
+            } else {
+                showMessage(`✅ Category "${target.name}" deleted successfully!`);
+            }
+            
+            console.log('🎉 Delete operation completed');
+            setIsLoading(false);
         };
 
         const uniqueCategories = [];
@@ -732,37 +961,224 @@ const AdminDashboard = () => {
             }
         }
 
+        // Sort categories by sort_order
+        uniqueCategories.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
         return (
             <div style={{ background: 'white', padding: '28px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                    <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}> Category Management</h2>
-                    <button onClick={() => setEditingCat({ id: 'new', name: '' })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                            🏷️ Category Management
+                        </h2>
+                        <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                            Organize your products into categories for better navigation
+                        </p>
+                    </div>
+                    <button 
+                        onClick={() => setEditingCat({ id: 'new', name: '' })} 
+                        disabled={isLoading}
+                        style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px', 
+                            padding: '10px 18px', 
+                            borderRadius: '12px', 
+                            background: isLoading ? '#94a3b8' : 'var(--primary)', 
+                            color: 'white', 
+                            border: 'none', 
+                            fontWeight: 800, 
+                            cursor: isLoading ? 'not-allowed' : 'pointer',
+                            opacity: isLoading ? 0.7 : 1
+                        }}
+                    >
                         <Plus size={18} /> Add Category
                     </button>
                 </div>
 
                 {editingCat && (
-                    <form onSubmit={handleSaveCat} style={{ display: 'flex', gap: '10px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '14px' }}>
-                        <input name="name" defaultValue={editingCat.name} placeholder="Category Name (e.g. High End Beef)" required style={inputStyle} />
-                        <button type="submit" style={{ padding: '10px 20px', borderRadius: '10px', background: '#059669', color: 'white', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Save</button>
-                        <button type="button" onClick={() => setEditingCat(null)} style={{ padding: '10px 15px', borderRadius: '10px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>Cancel</button>
+                    <form onSubmit={handleSaveCat} style={{ display: 'flex', gap: '10px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                        <input 
+                            name="name" 
+                            defaultValue={editingCat.name} 
+                            placeholder="Category Name (e.g. High End Beef)" 
+                            required 
+                            disabled={isLoading}
+                            style={{
+                                ...inputStyle,
+                                opacity: isLoading ? 0.7 : 1
+                            }}
+                        />
+                        <button 
+                            type="submit" 
+                            disabled={isLoading}
+                            style={{ 
+                                padding: '10px 20px', 
+                                borderRadius: '10px', 
+                                background: isLoading ? '#94a3b8' : '#059669', 
+                                color: 'white', 
+                                border: 'none', 
+                                fontWeight: 700, 
+                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                opacity: isLoading ? 0.7 : 1
+                            }}
+                        >
+                            {isLoading ? 'Saving...' : 'Save'}
+                        </button>
+                        <button 
+                            type="button" 
+                            onClick={() => setEditingCat(null)} 
+                            disabled={isLoading}
+                            style={{ 
+                                padding: '10px 15px', 
+                                borderRadius: '10px', 
+                                border: '1px solid #cbd5e1', 
+                                background: 'white', 
+                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                opacity: isLoading ? 0.7 : 1
+                            }}
+                        >
+                            Cancel
+                        </button>
                     </form>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
-                    {uniqueCategories.map((cat, idx) => (
-                        <div key={cat.id || cat.name || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                            <div>
-                                <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0f172a' }}>{cat.name}</span>
-                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Sort order: #{idx + 1}</div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                                <button onClick={() => setEditingCat(cat)} style={{ border: 'none', background: '#e2e8f0', padding: '6px 10px', borderRadius: '8px', cursor: 'pointer' }}><Edit2 size={15} color="#0f172a" /></button>
-                                <button onClick={() => deleteCat(cat.id)} style={{ border: 'none', background: '#fee2e2', padding: '6px 10px', borderRadius: '8px', cursor: 'pointer' }}><Trash2 size={15} color="#ef4444" /></button>
-                            </div>
+                {uniqueCategories.length === 0 ? (
+                    <div style={{ 
+                        textAlign: 'center', 
+                        padding: '40px', 
+                        color: '#94a3b8',
+                        background: '#f8fafc',
+                        borderRadius: '12px',
+                        border: '2px dashed #e2e8f0'
+                    }}>
+                        <Tag size={48} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
+                        <h3 style={{ margin: '0 0 8px', fontWeight: 600 }}>No Categories Yet</h3>
+                        <p style={{ margin: 0, fontSize: '0.9rem' }}>Create your first category to organize your products</p>
+                    </div>
+                ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                        {uniqueCategories.map((cat, idx) => {
+                            const itemCount = getCategoryItemCount(cat.id);
+                            return (
+                                <div key={cat.id || cat.name || idx} style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center', 
+                                    padding: '18px 20px', 
+                                    background: '#f8fafc', 
+                                    borderRadius: '14px', 
+                                    border: '1px solid #e2e8f0',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                                }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ 
+                                            fontWeight: 800, 
+                                            fontSize: '1rem', 
+                                            color: '#0f172a',
+                                            marginBottom: '4px'
+                                        }}>
+                                            {cat.name}
+                                        </div>
+                                        <div style={{ 
+                                            fontSize: '0.75rem', 
+                                            color: '#64748b',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '12px'
+                                        }}>
+                                            <span>Order: #{cat.sort_order || idx + 1}</span>
+                                            <span style={{
+                                                background: itemCount > 0 ? '#dcfce7' : '#f1f5f9',
+                                                color: itemCount > 0 ? '#166534' : '#64748b',
+                                                padding: '2px 8px',
+                                                borderRadius: '12px',
+                                                fontSize: '0.7rem',
+                                                fontWeight: 600
+                                            }}>
+                                                {itemCount} item{itemCount !== 1 ? 's' : ''}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                        <button 
+                                            onClick={() => setEditingCat(cat)} 
+                                            disabled={isLoading}
+                                            title="Edit Category"
+                                            style={{ 
+                                                border: 'none', 
+                                                background: '#e2e8f0', 
+                                                padding: '8px 10px', 
+                                                borderRadius: '8px', 
+                                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                                opacity: isLoading ? 0.5 : 1,
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <Edit2 size={16} color="#0f172a" />
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                console.log('🖱️ Delete button clicked for category:', cat);
+                                                console.log('🆔 Category ID:', cat.id, 'Type:', typeof cat.id);
+                                                console.log('📝 Category Name:', cat.name);
+                                                deleteCat(cat.id);
+                                            }} 
+                                            disabled={isLoading}
+                                            title={`Delete Category (${itemCount} items)`}
+                                            style={{ 
+                                                border: 'none', 
+                                                background: '#fee2e2', 
+                                                padding: '8px 10px', 
+                                                borderRadius: '8px', 
+                                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                                opacity: isLoading ? 0.5 : 1,
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <Trash2 size={16} color="#ef4444" />
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {isLoading && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 9999
+                    }}>
+                        <div style={{
+                            background: 'white',
+                            padding: '20px 30px',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            boxShadow: '0 8px 30px rgba(0,0,0,0.2)'
+                        }}>
+                            <div style={{
+                                width: '20px',
+                                height: '20px',
+                                border: '2px solid #e2e8f0',
+                                borderTop: '2px solid var(--primary)',
+                                borderRadius: '50%',
+                                animation: 'spin 1s linear infinite'
+                            }} />
+                            <span style={{ fontWeight: 600 }}>Processing...</span>
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -1930,44 +2346,52 @@ const AdminDashboard = () => {
                             icon={<List size={18} />}
                             label="Inventory View"
                             active={false}
-                            onClick={() => navigate('/admin/inventory')}
+                            onClick={() => {
+                                try {
+                                    navigate('/admin/inventory');
+                                    console.log('Navigated to inventory page');
+                                } catch (error) {
+                                    console.error('Navigation error:', error);
+                                    showMessage('Error navigating to inventory page');
+                                }
+                            }}
                         />
                         <SidebarItem
                             icon={<Utensils size={18} />}
                             label="Menu Catalog"
                             active={activeTab === 'menu'}
-                            onClick={() => setActiveTab('menu')}
+                            onClick={() => switchTab('menu')}
                         />
                         <SidebarItem
                             icon={<Tag size={18} />}
                             label="Categories"
                             active={activeTab === 'categories'}
-                            onClick={() => setActiveTab('categories')}
+                            onClick={() => switchTab('categories')}
                         />
                         <SidebarItem
                             icon={<ShoppingBag size={18} />}
                             label="Orders History"
                             active={activeTab === 'orders'}
-                            onClick={() => setActiveTab('orders')}
+                            onClick={() => switchTab('orders')}
                             badge={orders.filter(o => o.status === 'Pending').length}
                         />
                         <SidebarItem
                             icon={<Truck size={18} />}
                             label="Order Types"
                             active={activeTab === 'orderTypes'}
-                            onClick={() => setActiveTab('orderTypes')}
+                            onClick={() => switchTab('orderTypes')}
                         />
                         <SidebarItem
                             icon={<CreditCard size={18} />}
                             label="Payment Methods"
                             active={activeTab === 'payment'}
-                            onClick={() => setActiveTab('payment')}
+                            onClick={() => switchTab('payment')}
                         />
                         <SidebarItem
                             icon={<Settings size={18} />}
                             label="General Settings"
                             active={activeTab === 'settings'}
-                            onClick={() => setActiveTab('settings')}
+                            onClick={() => switchTab('settings')}
                         />
                     </nav>
                 </div>
