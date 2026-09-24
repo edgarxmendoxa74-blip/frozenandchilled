@@ -805,17 +805,18 @@ Thank you!`;
             ? '\n\n🛵 Lalamove Delivery reminder: After sending your order, the store will confirm your order first. Once confirmed, they will let you know the Lalamove delivery charge before you proceed with booking.'
             : '';
         if (copied) {
-            alert(`✅ Order details copied to clipboard!\n\nMessenger will open now. Just PASTE (long-press → Paste) your order in the chat and send it.${lalamoveReminder}`);
+            alert(`✅ Your order receipt is ready!\n\nMessenger will open now with your receipt already typed in — just tap SEND.\n\nIf the message box is empty, long-press and PASTE (your receipt is copied).${lalamoveReminder}`);
         } else {
-            alert(`⚠️ Could not copy automatically.\n\nMessenger will open now. Please type or describe your order in the chat.\n\nYou can also go back and use the "Copy Order Details" button to copy it manually.${lalamoveReminder}`);
+            alert(`✅ Your order receipt is ready!\n\nMessenger will open now with your receipt already typed in — just tap SEND.${lalamoveReminder}`);
         }
 
         // Step 4: Open Messenger using the most reliable method for each platform
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-        // Use m.me link — this is the OFFICIAL Facebook short URL for Messenger
-        // It correctly opens the Messenger app on mobile or messenger.com on desktop
-        const messengerUrl = `https://m.me/${pageId}`;
+        // m.me opens the Messenger app on mobile or messenger.com on desktop.
+        // "text" pre-fills the receipt in the message box so the customer only taps Send.
+        // It is not an officially documented parameter, so the clipboard copy above stays as a backup.
+        const messengerUrl = `https://m.me/${pageId}?text=${encodeURIComponent(message)}`;
 
         if (isMobile) {
             // On mobile, use window.location.href for m.me
