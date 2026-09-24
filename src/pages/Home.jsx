@@ -926,8 +926,7 @@ Thank you!`;
                             High-End Beef • Wholesale Chicken • Pork • Seafood • Rice
                         </p>
                         <p style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '30px' }}>
-                            📍 Caltex Road, Banaba South, Batangas City<br />
-                            ☎️ Hotline: 09947246294 / 09949314800
+                            📍 Caltex Road, Banaba South, Batangas City
                         </p>
                     </div>
                     <div className="hero-image-container">
