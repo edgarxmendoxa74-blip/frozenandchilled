@@ -80,9 +80,9 @@ const getItemBoxes = (item) => {
 };
 
 const Inventory = () => {
-  const [_activeTab, _setActiveTab] = useState('Mga Batch'); // 'Mga Batch' | 'Summary ng Stock' | 'Buong Rekord'
+  const [_activeTab, _setActiveTab] = useState('Batches'); // 'Batches' | 'Stock Summary' | 'Full Record'
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeFilter, setActiveFilter] = useState('Lahat');
+  const [activeFilter, setActiveFilter] = useState('All');
   const [sortBy, setSortBy] = useState('name'); // 'name' | 'stock_desc' | 'stock_asc' | 'price_desc'
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
   const [isLoading, setIsLoading] = useState(true);
@@ -430,7 +430,7 @@ const Inventory = () => {
   };
 
   const handleDeleteItem = async (item) => {
-    if (!window.confirm(`Sigurado ka bang gustong burahin ang "${item.name}" sa inventory?`)) return;
+    if (!window.confirm(`Are you sure you want to delete "${item.name}" from the inventory?`)) return;
     
     // Mark item as deleting
     setDeletingItemIds(prev => new Set(prev).add(item.id));
@@ -449,7 +449,7 @@ const Inventory = () => {
       setTimeout(() => {
         window.dispatchEvent(new Event('store_data_updated'));
       }, 100);
-      showMessage(`✅ Burado na ang "${item.name}" sa inventory`);
+      showMessage(`✅ "${item.name}" was deleted from the inventory`);
     } catch (err) {
       console.error('Error deleting item:', err);
       showMessage(`⚠️ Failed to delete from server, removing locally`);
@@ -475,7 +475,7 @@ const Inventory = () => {
     console.log('🗑️ Delete All button clicked!');
     console.log('📊 Current items count:', allItems.length);
     
-    if (!window.confirm(`⚠️ Sigurado ka bang gustong burahin ang LAHAT ng ${allItems.length} items sa inventory? This action cannot be undone!`)) {
+    if (!window.confirm(`⚠️ Are you sure you want to delete ALL ${allItems.length} items in the inventory? This action cannot be undone!`)) {
       console.log('❌ User cancelled deletion');
       return;
     }
@@ -506,7 +506,7 @@ const Inventory = () => {
       }, 100);
       
       console.log('✅ All items deleted successfully!');
-      showMessage('✅ Lahat ng items ay na-delete na!');
+      showMessage('✅ All items have been deleted!');
       
     } catch (err) {
       console.error('❌ Error deleting all items:', err);
@@ -533,6 +533,7 @@ const Inventory = () => {
     console.log('📦 Boxes being saved:', itemData.boxes);
     try {
       let savedItem;
+      let nextItems;
       if (editingItem) {
         const { data, error } = await supabase
           .from('menu_items')
@@ -544,9 +545,9 @@ const Inventory = () => {
         if (error) throw error;
         savedItem = data || { ...editingItem, ...itemData };
         
-        const updated = allItems.map(i => i.id === editingItem.id ? savedItem : i);
-        setAllItems(updated);
-        showMessage('✓ Matagumpay na na-update ang product!');
+        nextItems = allItems.map(i => i.id === editingItem.id ? savedItem : i);
+        setAllItems(nextItems);
+        showMessage('✓ Product updated successfully!');
       } else {
         const { data, error } = await supabase
           .from('menu_items')
@@ -557,8 +558,9 @@ const Inventory = () => {
         if (error) throw error;
         savedItem = data || { ...itemData, id: 'item_' + Date.now() };
         
-        setAllItems([savedItem, ...allItems]);
-        showMessage('✓ Bagong item sa inventory naidagdag!');
+        nextItems = [savedItem, ...allItems];
+        setAllItems(nextItems);
+        showMessage('✓ New item added to the inventory!');
       }
 
       setLocalStockState(prev => ({
@@ -570,14 +572,14 @@ const Inventory = () => {
         }
       }));
       
-      localStorage.setItem('menuItems', JSON.stringify(editingItem ? updated : [savedItem, ...allItems]));
+      localStorage.setItem('menuItems', JSON.stringify(nextItems));
       window.dispatchEvent(new Event('store_data_updated'));
       setShowNewBatchModal(false);
       setShowEditModal(false);
       setEditingItem(null);
     } catch (err) {
       console.error('Error saving item:', err);
-      const fallbackItem = { ...(editingItem || itemData), id: editingItem?.id || 'item_' + Date.now() };
+      const fallbackItem = { ...(editingItem || {}), ...itemData, id: editingItem?.id || 'item_' + Date.now() };
       const updated = editingItem 
         ? allItems.map(i => i.id === editingItem.id ? fallbackItem : i)
         : [fallbackItem, ...allItems];
@@ -587,7 +589,7 @@ const Inventory = () => {
       setShowNewBatchModal(false);
       setShowEditModal(false);
       setEditingItem(null);
-      showMessage('✓ Saved locally (Offline mode)');
+      showMessage(`⚠ Not saved to database (saved on this device only): ${err.message}`);
     }
   };
 
@@ -618,7 +620,7 @@ const Inventory = () => {
     a.href = url;
     a.download = `inventory_report_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
-    showMessage('✓ Na-download na ang Inventory Excel CSV Report!');
+    showMessage('✓ Inventory CSV report downloaded!');
   };
 
   return (
@@ -654,7 +656,7 @@ const Inventory = () => {
                 <span className="system-badge">Live Control Center</span>
               </h1>
               <p className="banner-subtitle">
-                Subaybayan ang stock, timbang ng box, bodega, at supply ng Chilled & Frozen Hub
+                Track stock, box weights, storage, and supply for Chilled & Frozen Hub
               </p>
             </div>
           </div>
@@ -674,7 +676,7 @@ const Inventory = () => {
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <div className="kpi-card">
           <div className="kpi-card-header">
-            <span className="kpi-label">Lahat ng Storage</span>
+            <span className="kpi-label">Total Storage</span>
             <div className="kpi-icon-box total">
               <Package size={22} />
             </div>
@@ -744,10 +746,10 @@ const Inventory = () => {
           {/* Status Filters */}
           <div className="status-filter-group">
             <button 
-              className={`filter-chip ${activeFilter === 'Lahat' ? 'active' : ''}`}
-              onClick={() => setActiveFilter('Lahat')}
+              className={`filter-chip ${activeFilter === 'All' ? 'active' : ''}`}
+              onClick={() => setActiveFilter('All')}
             >
-              Lahat ({stats.all})
+              All ({stats.all})
             </button>
             <button 
               className={`filter-chip chip-ok ${activeFilter === 'OK' ? 'active' : ''}`}
@@ -796,15 +798,15 @@ const Inventory = () => {
       {isLoading ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '20px', border: '1.5px solid #e2e8f0' }}>
             <RefreshCw size={36} color="#0c250d" style={{ animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
-            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0c250d' }}>Kinakarga ang inventory data...</div>
+            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0c250d' }}>Loading inventory data...</div>
           </div>
         ) : filteredItems.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px', background: 'white', borderRadius: '20px', border: '1.5px solid #e2e8f0' }}>
             <Package size={48} color="#cbd5e1" style={{ marginBottom: '12px' }} />
-            <div style={{ fontWeight: 800, fontSize: '1.2rem', color: '#0f172a' }}>Walang produktong tumutugma</div>
-            <p style={{ color: '#64748b', fontSize: '0.88rem', margin: '4px 0 16px' }}>Subukang papalitan ang search filter o magdagdag ng bagong produkto.</p>
+            <div style={{ fontWeight: 800, fontSize: '1.2rem', color: '#0f172a' }}>No matching products</div>
+            <p style={{ color: '#64748b', fontSize: '0.88rem', margin: '4px 0 16px' }}>Try changing the search filter or add a new product.</p>
             <button className="btn-new-batch" style={{ margin: '0 auto' }} onClick={handleNewEntry}>
-              <Plus size={18} /> Magdagdag ng Item
+              <Plus size={18} /> Add Item
             </button>
           </div>
         ) : viewMode === 'grid' ? (
@@ -838,8 +840,8 @@ const Inventory = () => {
                       </div>
                       <span className={`status-badge ${statusType}`}>
                         {statusType === 'ok' && '🟢 OK'}
-                        {statusType === 'paubos' && '🟡 Paubos'}
-                        {statusType === 'ubos' && '🔴 Ubos'}
+                        {statusType === 'paubos' && '🟡 Low Stock'}
+                        {statusType === 'ubos' && '🔴 Out of Stock'}
                       </span>
                     </div>
 
@@ -849,7 +851,7 @@ const Inventory = () => {
                         return (
                           <>
                             <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#475569', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span>📦</span> Mga Available na Kahon ({availBoxes.length})
+                              <span>📦</span> Available Boxes ({availBoxes.length})
                             </div>
                             {availBoxes.length > 0 ? (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '70px', overflowY: 'auto' }}>
@@ -872,7 +874,7 @@ const Inventory = () => {
                               </div>
                             ) : (
                               <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
-                                Walang magagamit na kahon
+                                No boxes available
                               </span>
                             )}
                           </>
@@ -919,7 +921,7 @@ const Inventory = () => {
                   <th>Category</th>
                   <th>Price</th>
                   <th>Stock Level</th>
-                  <th>Mga Available na Kahon</th>
+                  <th>Available Boxes</th>
                   <th>Threshold</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'right' }}>Mga Aksyon</th>
@@ -981,15 +983,15 @@ const Inventory = () => {
                             ))}
                           </div>
                         ) : (
-                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>Walang magagamit na kahon</span>
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>No boxes available</span>
                         )}
                       </td>
                       <td style={{ fontWeight: 700, color: '#64748b' }}>{threshold} {item.unit || 'kg'}</td>
                       <td>
                         <span className={`status-badge ${statusType}`}>
                           {statusType === 'ok' && '🟢 OK'}
-                          {statusType === 'paubos' && '🟡 Paubos'}
-                          {statusType === 'ubos' && '🔴 Ubos'}
+                          {statusType === 'paubos' && '🟡 Low Stock'}
+                          {statusType === 'ubos' && '🔴 Out of Stock'}
                         </span>
                       </td>
                       <td style={{ textAlign: 'right' }}>
@@ -1095,7 +1097,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
 
   const handleAddBox = () => {
     if (editableBoxes.length >= 6) {
-      alert('Maximum na 6 kahon ang pinapayagan.');
+      alert('A maximum of 6 boxes is allowed.');
       return;
     }
     const nextIdx = editableBoxes.length + 1;
@@ -1105,11 +1107,19 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
     ]);
   };
 
+  // Functional update so back-to-back calls (e.g. weight then auto price) don't overwrite each other.
   const handleUpdateBox = (index, field, val) => {
-    const updated = [...editableBoxes];
-    updated[index] = { ...updated[index], [field]: val };
-    setEditableBoxes(updated);
+    setEditableBoxes(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: val };
+      return updated;
+    });
   };
+
+  // Plain-text number fields: keep what the user types (so "15." or an empty field is allowed while editing).
+  const cleanDecimal = (value) => value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+  const cleanWhole = (value) => value.replace(/[^0-9]/g, '');
+  const toNumberOrBlank = (value) => (value === '' || value === undefined || value === null ? '' : (parseFloat(value) || 0));
 
   const handleRemoveBox = (index) => {
     setEditableBoxes(prev => prev.filter((_, i) => i !== index));
@@ -1118,14 +1128,14 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name || !formData.category_id || !formData.price) {
-      alert('Pakipunan ang obligadong fields: Product Name, Category, at Price');
+      alert('Please fill in the required fields: Product Name, Category, and Price');
       return;
     }
 
     const activeBoxesWeight = editableBoxes.reduce((acc, b) => {
       if (b.disabled) return acc;
       const w = parseFloat(b.weight) || 0;
-      const qty = b.stockQty !== undefined ? Number(b.stockQty) : 1;
+      const qty = b.stockQty !== undefined && b.stockQty !== '' ? (parseInt(b.stockQty, 10) || 0) : 1;
       return acc + (w * qty);
     }, 0);
 
@@ -1141,9 +1151,9 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
         id: b.id || `box-${i + 1}`,
         name: b.name || `Box ${i + 1}`,
         weight: parseFloat(b.weight) || 0,
-        stockQty: b.stockQty !== undefined ? Number(b.stockQty) : 1,
-        pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
-        price: b.price !== undefined ? b.price : '',
+        stockQty: b.stockQty !== undefined && b.stockQty !== '' ? (parseInt(b.stockQty, 10) || 0) : 1,
+        pricePerKg: toNumberOrBlank(b.pricePerKg),
+        price: toNumberOrBlank(b.price),
         disabled: Boolean(b.disabled),
         ordered: Boolean(b.ordered || false) // Keep ordered separate from disabled
       }));
@@ -1172,7 +1182,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
               Pasok / Bagong Batch
             </h2>
             <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.88rem' }}>
-              I-record ang bagong dating — storage at timbang ng bawat box
+              Record new arrivals — storage and weight of each box
             </p>
           </div>
           <button 
@@ -1208,7 +1218,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                   onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                   required
                 >
-                  <option value="">Pumili ng category...</option>
+                  <option value="">Select a category...</option>
                   {categories.map(cat => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
@@ -1216,11 +1226,109 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
               </div>
             </div>
 
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div className="form-group-item" style={{ margin: 0 }}>
+                <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Price (₱) *</label>
+                <input 
+                  type="number"
+                  step="0.01"
+                  className="form-input-styled"
+                  value={formData.price}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  placeholder="e.g. 500"
+                  required
+                />
+              </div>
+              <div className="form-group-item" style={{ margin: 0 }}>
+                <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Promo Price (₱ - Optional)</label>
+                <input 
+                  type="number"
+                  step="0.01"
+                  className="form-input-styled"
+                  value={formData.promo_price || ''}
+                  onChange={(e) => setFormData({ ...formData, promo_price: e.target.value })}
+                  placeholder="Discount price"
+                />
+              </div>
+            </div>
+
+            <div className="form-group-item" style={{ margin: 0 }}>
+              <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Description</label>
+              <textarea 
+                className="form-input-styled"
+                value={formData.description || ''}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Short product description..."
+                style={{ minHeight: '60px' }}
+              />
+            </div>
+
+            <div className="form-group-item" style={{ margin: 0 }}>
+              <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Image URL</label>
+              <input 
+                type="text"
+                className="form-input-styled"
+                value={formData.image || ''}
+                onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                placeholder="https://example.com/image.jpg"
+              />
+            </div>
+
             {/* BOX WEIGHT CARD SECTION - EXACT MATCH TO USER IMAGE */}
             <div style={{ background: '#f4f6f8', padding: '20px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '1rem', color: '#1e293b', marginBottom: '14px', fontFamily: 'Outfit, Georgia, serif' }}>
-                <span>📦</span>
-                <span>Timbang at Listahan ng mga Box (Editable)</span>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                gap: '12px', 
+                fontWeight: 800, 
+                fontSize: '1.1rem', 
+                color: '#1e293b', 
+                marginBottom: '20px', 
+                fontFamily: 'Outfit, sans-serif',
+                background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+                padding: '16px 20px',
+                borderRadius: '16px',
+                border: '2px solid #cbd5e1',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    background: 'linear-gradient(135deg, #0c250d 0%, #065f46 100%)',
+                    color: 'white',
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.5rem',
+                    boxShadow: '0 6px 20px rgba(12, 37, 13, 0.3)'
+                  }}>
+                    📦
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '1.2rem', color: '#0c250d', letterSpacing: '-0.5px' }}>
+                      Box Weights & List
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
+                      Live Editable • Real-time Inventory Tracking
+                    </div>
+                  </div>
+                </div>
+                <div style={{
+                  background: '#ecfdf5',
+                  color: '#065f46',
+                  padding: '8px 16px',
+                  borderRadius: '12px',
+                  border: '1px solid #a7f3d0',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
+                }}>
+                  ⚡ Live System
+                </div>
               </div>
 
               {/* Editable Boxes */}
@@ -1241,13 +1349,59 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                     }, 0);
 
                     return (
-                      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '10px 14px', borderRadius: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', flexWrap: 'wrap', gap: '8px' }}>
-                        <div style={{ fontWeight: 800, color: '#065f46' }}>
-                          📦 Available Boxes: <span style={{ background: '#059669', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.78rem' }}>{availCount} Box{availCount !== 1 ? 'es' : ''} Stock ({availWeight.toFixed(3)} kg)</span>
+                      <div style={{ 
+                        background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', 
+                        border: '2px solid #10b981', 
+                        padding: '20px 24px', 
+                        borderRadius: '16px', 
+                        marginBottom: '20px', 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center', 
+                        fontSize: '0.9rem', 
+                        flexWrap: 'wrap', 
+                        gap: '16px',
+                        boxShadow: '0 8px 25px rgba(16, 185, 129, 0.15)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <div style={{
+                            background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                            color: 'white',
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.8rem',
+                            boxShadow: '0 6px 20px rgba(5, 150, 105, 0.4)'
+                          }}>
+                            📦
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 800, color: '#065f46', fontSize: '1.1rem', marginBottom: '4px' }}>
+                              Available Boxes Ready for Distribution
+                            </div>
+                            <div style={{ 
+                              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', 
+                              color: 'white', 
+                              padding: '6px 16px', 
+                              borderRadius: '12px', 
+                              fontSize: '0.85rem',
+                              fontWeight: 800,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.3)'
+                            }}>
+                              <span style={{ fontSize: '1rem' }}>🚛</span>
+                              {availCount} Box{availCount !== 1 ? 'es' : ''} Stock • {availWeight.toFixed(1)} kg Total
+                            </div>
+                          </div>
                         </div>
                         {unitPrice > 0 && (
                           <div style={{ fontWeight: 800, color: '#047857' }}>
-                            Kabuuan Halaga: <span style={{ color: '#059669' }}>₱{Number(totalVal.toFixed(2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            Total Value: <span style={{ color: '#059669' }}>₱{Number(totalVal.toFixed(2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
                       </div>
@@ -1270,22 +1424,22 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                             className="form-input-styled"
                             value={b.name}
                             onChange={(e) => handleUpdateBox(idx, 'name', e.target.value)}
-                            placeholder="Pangalan (hal. Box 1)"
+                            placeholder="Name (e.g. Box 1)"
                             style={{ flex: '1 1 100px', minWidth: '100px', background: '#f8fafc', padding: '6px 10px', fontSize: '0.85rem' }}
                           />
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>Timbang:</span>
-                            <input 
-                              type="number"
-                              step="0.001"
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>Weight:</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
                               className="form-input-styled"
-                              value={b.weight}
+                              value={b.weight ?? ''}
                               onChange={(e) => {
-                                const newW = parseFloat(e.target.value) || 0;
-                                handleUpdateBox(idx, 'weight', newW);
+                                const raw = cleanDecimal(e.target.value);
+                                handleUpdateBox(idx, 'weight', raw);
                                 if (b.price === undefined || b.price === null || b.price === '') {
-                                  if (boxPKg > 0) handleUpdateBox(idx, 'price', Number((newW * boxPKg).toFixed(2)));
+                                  if (boxPKg > 0) handleUpdateBox(idx, 'price', Number(((parseFloat(raw) || 0) * boxPKg).toFixed(2)));
                                 }
                               }}
                               placeholder="kg"
@@ -1297,34 +1451,34 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                           {/* Editable Price Per Kg Field */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0284c7' }}>₱/kg:</span>
-                            <input 
-                              type="number"
-                              step="0.01"
+                            <input
+                              type="text"
+                              inputMode="decimal"
                               className="form-input-styled"
                               value={b.pricePerKg !== undefined ? b.pricePerKg : ''}
                               onChange={(e) => {
-                                const customPKg = e.target.value === '' ? '' : parseFloat(e.target.value);
+                                const customPKg = cleanDecimal(e.target.value);
                                 handleUpdateBox(idx, 'pricePerKg', customPKg);
-                                
+
                                 const currentW = parseFloat(b.weight) || 0;
-                                const activePKg = customPKg !== '' ? customPKg : unitPrice;
+                                const activePKg = customPKg !== '' ? (parseFloat(customPKg) || 0) : unitPrice;
                                 handleUpdateBox(idx, 'price', Number((currentW * activePKg).toFixed(2)));
                               }}
                               placeholder={unitPrice.toString()}
                               style={{ width: '70px', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#0284c7' }}
-                              title={`I-edit ang presyo per kilo para sa ${b.name}`}
+                              title={`Edit the price per kilo for ${b.name}`}
                             />
                           </div>
 
                           {/* Editable Stock Qty */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#2563eb' }}>Stocks:</span>
-                            <input 
-                              type="number"
-                              min="0"
+                            <input
+                              type="text"
+                              inputMode="numeric"
                               className="form-input-styled"
                               value={b.stockQty !== undefined ? b.stockQty : 1}
-                              onChange={(e) => handleUpdateBox(idx, 'stockQty', parseInt(e.target.value) || 0)}
+                              onChange={(e) => handleUpdateBox(idx, 'stockQty', cleanWhole(e.target.value))}
                               style={{ width: '60px', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#1d4ed8' }}
                             />
                           </div>
@@ -1332,16 +1486,13 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                           {/* Editable Total Price Field */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#059669' }}>Total ₱:</span>
-                            <input 
-                              type="number"
-                              step="0.01"
+                            <input
+                              type="text"
+                              inputMode="decimal"
                               className="form-input-styled"
                               value={displayPrice}
-                              onChange={(e) => {
-                                const customP = e.target.value === '' ? '' : parseFloat(e.target.value);
-                                handleUpdateBox(idx, 'price', customP);
-                              }}
-                              placeholder="Kabuuan"
+                              onChange={(e) => handleUpdateBox(idx, 'price', cleanDecimal(e.target.value))}
+                              placeholder="Total"
                               style={{ width: '85px', background: '#f0fdf4', border: '1px solid #a7f3d0', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#059669' }}
                             />
                           </div>
@@ -1375,7 +1526,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                     onClick={handleAddBox}
                     style={{ border: '1px dashed #059669', background: '#ecfdf5', color: '#047857', borderRadius: '10px', padding: '8px 16px', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                   >
-                    <Plus size={15} /> Magdagdag ng Box
+                    <Plus size={15} /> Add Box
                   </button>
                 </div>
               )}
@@ -1419,7 +1570,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                 gap: '8px'
               }}
             >
-              I-record ang pasok
+              Record Stock In
             </button>
           </div>
         </form>

@@ -10,7 +10,7 @@ const About = () => {
 
     useEffect(() => {
         const fetchStoreSettings = async () => {
-            const { data } = await supabase.from('store_settings').select('*').limit(1).single();
+            const { data } = await supabase.from('store_settings').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle();
             if (data) setStoreSettings(data);
         };
         fetchStoreSettings();

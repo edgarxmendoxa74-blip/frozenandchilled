@@ -30,17 +30,23 @@ import {
     Check,
     AlertTriangle,
     Minus,
-    ExternalLink
+    ExternalLink,
+    BarChart2,
+    TrendingUp,
+    DollarSign,
+    Activity,
+    Users,
+    Eye
 } from 'lucide-react';
 import { categories as initialCategories, menuItems as initialItems } from '../data/MenuData';
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState('menu'); // menu, categories, orders, orderTypes, payment, settings
+    const [activeTab, setActiveTab] = useState('orders'); // categories, orders, orderTypes, payment, settings
     
     // Safe tab switching with validation
     const switchTab = (tabName) => {
-        const validTabs = ['menu', 'categories', 'orders', 'orderTypes', 'payment', 'settings'];
+        const validTabs = ['menu', 'categories', 'orders', 'orderTypes', 'payment', 'settings', 'analytics'];
         if (validTabs.includes(tabName)) {
             setActiveTab(tabName);
             console.log(`Switched to tab: ${tabName}`);
@@ -92,7 +98,7 @@ const AdminDashboard = () => {
         return saved ? JSON.parse(saved) : [
             { id: 'pickup', name: 'Pickup' },
             { id: 'delivery', name: 'Delivery' },
-            { id: 'lalamove-delivery', name: 'Manual Lalamove Delivery Booking' }
+            { id: 'lalamove-delivery', name: 'Lalamove Delivery' }
         ];
     });
 
@@ -240,7 +246,7 @@ const AdminDashboard = () => {
                     localStorage.setItem('orderTypes', JSON.stringify(typeData));
                 }
 
-                const { data: storeData } = await supabase.from('store_settings').select('*').limit(1).single();
+                const { data: storeData } = await supabase.from('store_settings').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle();
                 if (storeData) setStoreSettings(storeData);
 
                 const { data: orderData } = await supabase.from('orders').select('*').order('timestamp', { ascending: false });
@@ -260,9 +266,28 @@ const AdminDashboard = () => {
         setTimeout(() => setMessage(''), 3500);
     };
 
+    // Writes to the single most recent store_settings row (reads pick the newest by updated_at),
+    // inserting only when the table is empty. Throws on failure so callers can report it.
+    const persistStoreSettings = async (changes) => {
+        const payload = { ...changes, updated_at: new Date().toISOString() };
+        // Look up the row id fresh: a cached id in localStorage may be stale or from another project.
+        const { data: latest, error: lookupError } = await supabase.from('store_settings').select('id').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        if (lookupError) throw lookupError;
+        const id = latest?.id;
+        const { data, error } = id
+            ? await supabase.from('store_settings').update(payload).eq('id', id).select().single()
+            : await supabase.from('store_settings').insert([payload]).select().single();
+        if (error) throw error;
+        setStoreSettings(data);
+        localStorage.setItem('storeSettings', JSON.stringify(data));
+        return data;
+    };
+
     const handleLogout = async () => {
         try {
             localStorage.removeItem('admin_bypass');
+            localStorage.removeItem('admin_test_user');
+            localStorage.removeItem('admin_test_email');
             await supabase.auth.signOut();
             console.log('Admin logged out successfully');
             navigate('/admin');
@@ -1425,10 +1450,11 @@ const AdminDashboard = () => {
             setDeliveryLocations(updatedList);
             localStorage.setItem('deliveryLocations', JSON.stringify(updatedList));
 
-            try {
-                await supabase.from('delivery_locations').upsert([newLoc]);
-            } catch (err) {
-                console.log('Supabase location sync notice:', err);
+            const { error } = await supabase.from('delivery_locations').upsert([newLoc]);
+            if (error) {
+                showMessage(` Saved on this device only, not to the database: ${error.message}`);
+                setIsLocModalOpen(false);
+                return;
             }
 
             showMessage(editingLoc ? ` Delivery charge for ${newLoc.name} updated!` : ` Added delivery location ${newLoc.name}!`);
@@ -1441,11 +1467,12 @@ const AdminDashboard = () => {
             setDeliveryLocations(updated);
             localStorage.setItem('deliveryLocations', JSON.stringify(updated));
 
-            try {
-                if (id) await supabase.from('delivery_locations').delete().eq('id', id);
-                else await supabase.from('delivery_locations').delete().eq('name', name);
-            } catch (err) {
-                console.log('Supabase location delete notice:', err);
+            const { error } = id
+                ? await supabase.from('delivery_locations').delete().eq('id', id)
+                : await supabase.from('delivery_locations').delete().eq('name', name);
+            if (error) {
+                showMessage(` Removed on this device only, not from the database: ${error.message}`);
+                return;
             }
 
             showMessage(` Delivery location "${name}" removed.`);
@@ -1483,7 +1510,7 @@ const AdminDashboard = () => {
                         <div style={{ padding: '18px', background: '#fffbeb', borderRadius: '16px', border: '1.5px solid #fef3c7', display: 'flex', alignItems: 'center', gap: '14px' }}>
                             <div style={{ background: '#d97706', color: 'white', borderRadius: '50%', padding: '10px', display: 'flex' }}><Truck size={22} /></div>
                             <div>
-                                <h4 style={{ margin: '0 0 2px', fontSize: '1.05rem', color: '#92400e', fontWeight: 900 }}>Manual Lalamove Delivery</h4>
+                                <h4 style={{ margin: '0 0 2px', fontSize: '1.05rem', color: '#92400e', fontWeight: 900 }}>Lalamove Delivery</h4>
                                 <span style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: 700 }}> Active (Customer/Store Rider Booking)</span>
                             </div>
                         </div>
@@ -1862,15 +1889,11 @@ const AdminDashboard = () => {
             setPaymentSettings(updatedList);
             localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
 
-            try {
-                const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-                if (isRealUUID) {
-                    await supabase.from('payment_settings').delete().eq('id', id);
-                } else {
-                    await supabase.from('payment_settings').delete().eq('name', name);
-                }
-            } catch (err) {
-                console.warn('Supabase delete notice:', err);
+            // Match by name: the table can hold duplicate rows per method, and checkout lists every active one.
+            const { error } = await supabase.from('payment_settings').delete().eq('name', name);
+            if (error) {
+                showMessage(` Could not delete "${name}" from the database: ${error.message}`);
+                return;
             }
 
             showMessage(` "${name}" deleted.`);
@@ -1882,15 +1905,11 @@ const AdminDashboard = () => {
             setPaymentSettings(updatedList);
             localStorage.setItem('paymentSettings', JSON.stringify(updatedList));
 
-            try {
-                const isRealUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(method.id);
-                if (isRealUUID) {
-                    await supabase.from('payment_settings').update({ is_active: updated.is_active }).eq('id', method.id);
-                } else {
-                    await supabase.from('payment_settings').update({ is_active: updated.is_active }).eq('name', method.name);
-                }
-            } catch (err) {
-                console.warn('Supabase toggle notice:', err);
+            // Match by name so duplicate rows for the same method are all switched together.
+            const { error } = await supabase.from('payment_settings').update({ is_active: updated.is_active }).eq('name', method.name);
+            if (error) {
+                showMessage(` Could not update ${method.name} in the database: ${error.message}`);
+                return;
             }
 
             showMessage(`${method.name} is now ${updated.is_active ? ' Active' : ' Inactive'}`);
@@ -2091,12 +2110,25 @@ const AdminDashboard = () => {
         const [newBannerUrl, setNewBannerUrl] = useState('');
         const [isUploading, setIsUploading] = useState(false);
 
+        // Saves slideshow changes immediately so the homepage matches what the admin sees.
+        const saveBanners = async (updated, successMsg) => {
+            const previous = banners;
+            setBanners(updated);
+            setStoreSettings(prev => ({ ...prev, banner_images: updated }));
+            try {
+                await persistStoreSettings({ banner_images: updated });
+                showMessage(successMsg);
+            } catch (err) {
+                setStoreSettings(prev => ({ ...prev, banner_images: previous }));
+                showMessage(` Could not save slideshow: ${err.message}`);
+            }
+        };
+
         const handleAddBanner = (e) => {
             e.preventDefault();
             if (!newBannerUrl.trim()) return;
-            const updated = [...banners, newBannerUrl.trim()];
-            setBanners(updated);
             setNewBannerUrl('');
+            saveBanners([...banners, newBannerUrl.trim()], ' Slide image added!');
         };
 
         const handleRemoveBanner = (index) => {
@@ -2104,8 +2136,7 @@ const AdminDashboard = () => {
                 showMessage(' You should keep at least 1 hero banner image!');
                 return;
             }
-            const updated = banners.filter((_, i) => i !== index);
-            setBanners(updated);
+            saveBanners(banners.filter((_, i) => i !== index), ' Slide image deleted!');
         };
 
         const handleFileUpload = async (e) => {
@@ -2125,9 +2156,8 @@ const AdminDashboard = () => {
                     // Fallback to data URL if Supabase bucket isn't public/configured
                     const reader = new FileReader();
                     reader.onloadend = () => {
-                        setBanners(prev => [...prev, reader.result]);
                         setIsUploading(false);
-                        showMessage(' Hero banner image uploaded!');
+                        saveBanners([...banners, reader.result], ' Hero banner image uploaded!');
                     };
                     reader.readAsDataURL(file);
                     return;
@@ -2135,8 +2165,7 @@ const AdminDashboard = () => {
 
                 const { data } = supabase.storage.from('products').getPublicUrl(filePath);
                 if (data?.publicUrl) {
-                    setBanners(prev => [...prev, data.publicUrl]);
-                    showMessage(' Hero banner image uploaded to Supabase!');
+                    await saveBanners([...banners, data.publicUrl], ' Hero banner image uploaded to Supabase!');
                 }
             } catch (err) {
                 console.error(err);
@@ -2151,7 +2180,7 @@ const AdminDashboard = () => {
             const updated = [...banners];
             const [moved] = updated.splice(fromIndex, 1);
             updated.splice(toIndex, 0, moved);
-            setBanners(updated);
+            saveBanners(updated, ' Slide order updated!');
         };
 
         const handleSave = async (e) => {
@@ -2168,36 +2197,12 @@ const AdminDashboard = () => {
                 banner_images: banners
             };
 
-            const savedObj = { ...settingsObj, id: storeSettings.id };
-            setStoreSettings(savedObj);
-            localStorage.setItem('storeSettings', JSON.stringify(savedObj));
-
             try {
-                if (storeSettings.id) {
-                    // Update the existing row using its real UUID
-                    const { error } = await supabase
-                        .from('store_settings')
-                        .update(settingsObj)
-                        .eq('id', storeSettings.id);
-                    if (error) console.log('Supabase settings notice:', error.message);
-                } else {
-                    // No row yet  insert and capture the generated UUID
-                    const { data, error } = await supabase
-                        .from('store_settings')
-                        .insert([settingsObj])
-                        .select()
-                        .single();
-                    if (error) console.log('Supabase settings notice:', error.message);
-                    if (data) {
-                        setStoreSettings(data);
-                        localStorage.setItem('storeSettings', JSON.stringify(data));
-                    }
-                }
+                await persistStoreSettings(settingsObj);
+                showMessage(' Store general settings & Hero Slideshow updated successfully!');
             } catch (err) {
-                console.log('Supabase sync notice:', err);
+                showMessage(` Could not save settings: ${err.message}`);
             }
-
-            showMessage(' Store general settings & Hero Slideshow updated successfully!');
         };
 
         return (
@@ -2455,12 +2460,6 @@ const AdminDashboard = () => {
                             }}
                         />
                         <SidebarItem
-                            icon={<Utensils size={18} />}
-                            label="Menu Catalog"
-                            active={activeTab === 'menu'}
-                            onClick={() => switchTab('menu')}
-                        />
-                        <SidebarItem
                             icon={<Tag size={18} />}
                             label="Categories"
                             active={activeTab === 'categories'}
@@ -2472,6 +2471,12 @@ const AdminDashboard = () => {
                             active={activeTab === 'orders'}
                             onClick={() => switchTab('orders')}
                             badge={orders.filter(o => o.status === 'Pending').length}
+                        />
+                        <SidebarItem
+                            icon={<BarChart2 size={18} />}
+                            label="Sales Analytics"
+                            active={activeTab === 'analytics'}
+                            onClick={() => switchTab('analytics')}
                         />
                         <SidebarItem
                             icon={<Truck size={18} />}
@@ -2524,7 +2529,7 @@ const AdminDashboard = () => {
                         top: '20px',
                         left: '58%',
                         transform: 'translateX(-50%)',
-                        background: message.toLowerCase().includes('error') ? '#ef4444' : '#059669',
+                        background: /error|could not|not saved|not to the database|not from the database|❌/i.test(message) ? '#ef4444' : '#059669',
                         color: 'white',
                         padding: '12px 24px',
                         borderRadius: '14px',
@@ -2556,6 +2561,7 @@ const AdminDashboard = () => {
                             {activeTab === 'menu' && ' Menu & Product Catalog Editor'}
                             {activeTab === 'categories' && ' Store Categories'}
                             {activeTab === 'orders' && ' Customer Orders Manager'}
+                            {activeTab === 'analytics' && ' Sales Analytics'}
                             {activeTab === 'orderTypes' && ' Order & Fulfillment Methods'}
                             {activeTab === 'payment' && ' Payment Methods'}
                             {activeTab === 'settings' && ' Store General Settings'}
@@ -2579,6 +2585,7 @@ const AdminDashboard = () => {
                 {activeTab === 'menu' && <MenuManager />}
                 {activeTab === 'categories' && <CategoryManager />}
                 {activeTab === 'orders' && <OrderHistory />}
+                {activeTab === 'analytics' && <SalesAnalytics />}
                 {activeTab === 'orderTypes' && <OrderTypeManager />}
                 {activeTab === 'payment' && <PaymentSettings />}
                 {activeTab === 'settings' && <StoreGeneralSettings />}
@@ -2612,5 +2619,348 @@ const SidebarItem = ({ icon, label, active, onClick, badge }) => (
 );
 
 const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.92rem' };
+
+// ========== SALES ANALYTICS COMPONENT ==========
+const SalesAnalytics = () => {
+    const [orders, setOrders] = useState([]);
+    const [items, setItems] = useState([]);
+    const [dateRange, setDateRange] = useState('30');
+
+    useEffect(() => {
+        const savedOrders = localStorage.getItem('orders');
+        const savedItems = localStorage.getItem('menuItems');
+        if (savedOrders) setOrders(JSON.parse(savedOrders));
+        if (savedItems) setItems(JSON.parse(savedItems));
+    }, []);
+
+    // Store visits (one per browser per day), recorded by the storefront
+    const [visits, setVisits] = useState([]);
+    const [visitsError, setVisitsError] = useState('');
+    useEffect(() => {
+        const fetchVisits = async () => {
+            const since = new Date();
+            since.setDate(since.getDate() - parseInt(dateRange) + 1);
+            const { data, error } = await supabase
+                .from('store_visits')
+                .select('visit_date, ordered')
+                .gte('visit_date', since.toLocaleDateString('en-CA'))
+                .limit(100000);
+            if (error) {
+                setVisitsError(error.message);
+                return;
+            }
+            setVisitsError('');
+            setVisits(data || []);
+        };
+        fetchVisits();
+    }, [dateRange]);
+
+    const totalVisits = visits.length;
+    const orderedVisits = visits.filter(v => v.ordered).length;
+    const browsedOnlyVisits = totalVisits - orderedVisits;
+    const conversionRate = totalVisits > 0 ? (orderedVisits / totalVisits) * 100 : 0;
+
+    // Orders store total_amount / timestamp; older local copies may use total / created_at
+    const orderTotal = (o) => Number(o.total_amount ?? o.total) || 0;
+    const orderDate = (o) => o.timestamp || o.created_at;
+
+    // Filter orders by date range
+    const now = new Date();
+    const rangeMs = parseInt(dateRange) * 24 * 60 * 60 * 1000;
+    const filteredOrders = orders.filter(o => {
+        if (!orderDate(o)) return true;
+        return (now - new Date(orderDate(o))) <= rangeMs;
+    });
+
+    // Stats computation
+    const completedOrders = filteredOrders.filter(o => o.status === 'Completed' || o.status === 'Confirmed');
+    const pendingOrders = filteredOrders.filter(o => o.status === 'Pending');
+    const cancelledOrders = filteredOrders.filter(o => o.status === 'Cancelled');
+
+    const totalRevenue = completedOrders.reduce((sum, o) => sum + orderTotal(o), 0);
+    const avgOrderValue = completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0;
+    const totalItems = completedOrders.reduce((sum, o) => sum + (o.items ? o.items.length : 0), 0);
+
+    // Daily sales for chart
+    const dailySales = {};
+    const daysToShow = Math.min(parseInt(dateRange), 30);
+    for (let i = daysToShow - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        dailySales[key] = 0;
+    }
+    completedOrders.forEach(o => {
+        if (!orderDate(o)) return;
+        const d = new Date(orderDate(o));
+        const key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        if (dailySales[key] !== undefined) {
+            dailySales[key] += orderTotal(o);
+        }
+    });
+    const maxDailySale = Math.max(...Object.values(dailySales), 1);
+
+    // Top products
+    const productCount = {};
+    completedOrders.forEach(o => {
+        if (!o.items) return;
+        o.items.forEach(item => {
+            // Items are saved as text like "Chicken Breast (x2) - Box A (...)"
+            const match = typeof item === 'string' ? item.match(/^(.*?) (x(d+))/) : null;
+            const name = match ? match[1] : (item.name || (typeof item === 'string' ? item : 'Unknown'));
+            const qty = match ? Number(match[2]) : (item.quantity || 1);
+            productCount[name] = (productCount[name] || 0) + qty;
+        });
+    });
+    const topProducts = Object.entries(productCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8);
+    const maxProductCount = topProducts.length > 0 ? topProducts[0][1] : 1;
+
+    // Order type breakdown
+    const orderTypeCount = {};
+    filteredOrders.forEach(o => {
+        const type = o.order_type || o.orderType || 'Unknown';
+        orderTypeCount[type] = (orderTypeCount[type] || 0) + 1;
+    });
+
+    const statCardStyle = (gradient) => ({
+        background: gradient,
+        borderRadius: '20px',
+        padding: '22px 24px',
+        color: 'white',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+        position: 'relative',
+        overflow: 'hidden'
+    });
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Date Range Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'white', padding: '14px 20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#475569' }}>Date Range:</span>
+                {['7', '14', '30', '90'].map(d => (
+                    <button
+                        key={d}
+                        onClick={() => setDateRange(d)}
+                        style={{
+                            padding: '8px 18px',
+                            borderRadius: '12px',
+                            border: dateRange === d ? '2px solid #0c250d' : '1px solid #cbd5e1',
+                            background: dateRange === d ? '#0c250d' : 'white',
+                            color: dateRange === d ? '#F9B700' : '#475569',
+                            fontWeight: 800,
+                            fontSize: '0.82rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        {d} Days
+                    </button>
+                ))}
+            </div>
+
+            {/* Stats Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+                <div style={statCardStyle('linear-gradient(135deg, #059669 0%, #10b981 100%)')}>
+                    <div style={{ opacity: 0.12, position: 'absolute', right: -8, top: -8 }}><DollarSign size={80} /></div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Revenue</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 900, marginTop: '6px' }}>₱{totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>{completedOrders.length} completed orders</div>
+                </div>
+                <div style={statCardStyle('linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)')}>
+                    <div style={{ opacity: 0.12, position: 'absolute', right: -8, top: -8 }}><ShoppingBag size={80} /></div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Orders</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 900, marginTop: '6px' }}>{filteredOrders.length}</div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>{pendingOrders.length} pending</div>
+                </div>
+                <div style={statCardStyle('linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)')}>
+                    <div style={{ opacity: 0.12, position: 'absolute', right: -8, top: -8 }}><TrendingUp size={80} /></div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avg Order Value</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 900, marginTop: '6px' }}>₱{avgOrderValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>{totalItems} items sold</div>
+                </div>
+                <div style={statCardStyle('linear-gradient(135deg, #dc2626 0%, #f87171 100%)')}>
+                    <div style={{ opacity: 0.12, position: 'absolute', right: -8, top: -8 }}><Activity size={80} /></div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cancelled</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 900, marginTop: '6px' }}>{cancelledOrders.length}</div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>
+                        {filteredOrders.length > 0 ? ((cancelledOrders.length / filteredOrders.length) * 100).toFixed(1) : 0}% rate
+                    </div>
+                </div>
+            </div>
+
+            {/* Store Visits: ordered vs. browsed only */}
+            <div style={{ background: 'white', borderRadius: '20px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
+                <h3 style={{ margin: '0 0 4px', fontSize: '1rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                    👥 Store Visits (last {dateRange} days)
+                </h3>
+                <p style={{ margin: '0 0 18px', fontSize: '0.78rem', color: '#64748b' }}>
+                    Each visitor is counted once per day. A visit counts as "ordered" when that visitor sent an order.
+                </p>
+                {visitsError ? (
+                    <div style={{ fontSize: '0.85rem', color: '#dc2626', fontWeight: 700 }}>Could not load store visits: {visitsError}</div>
+                ) : (
+                    <>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px', marginBottom: '18px' }}>
+                            {[
+                                { label: 'Total Visits', value: totalVisits, sub: 'store visitors', color: '#0c250d', bg: '#f1f5f9', icon: <Users size={18} /> },
+                                { label: 'Visited & Ordered', value: orderedVisits, sub: 'sent an order', color: '#059669', bg: '#ecfdf5', icon: <ShoppingBag size={18} /> },
+                                { label: 'Visited Only', value: browsedOnlyVisits, sub: 'browsed, no order', color: '#d97706', bg: '#fffbeb', icon: <Eye size={18} /> },
+                                { label: 'Conversion Rate', value: `${conversionRate.toFixed(1)}%`, sub: 'visitors who ordered', color: '#7c3aed', bg: '#f5f3ff', icon: <TrendingUp size={18} /> }
+                            ].map(s => (
+                                <div key={s.label} style={{ background: s.bg, borderRadius: '14px', padding: '14px 16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: s.color, fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                                        {s.icon} {s.label}
+                                    </div>
+                                    <div style={{ fontSize: '1.6rem', fontWeight: 900, color: s.color, marginTop: '6px' }}>{s.value}</div>
+                                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{s.sub}</div>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Ordered vs. visited-only split */}
+                        <div style={{ display: 'flex', height: '14px', borderRadius: '8px', overflow: 'hidden', background: '#e2e8f0' }}>
+                            {totalVisits > 0 && (
+                                <>
+                                    <div title={`Ordered: ${orderedVisits}`} style={{ width: `${(orderedVisits / totalVisits) * 100}%`, background: '#059669' }} />
+                                    <div title={`Visited only: ${browsedOnlyVisits}`} style={{ width: `${(browsedOnlyVisits / totalVisits) * 100}%`, background: '#f59e0b' }} />
+                                </>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '0.75rem', color: '#475569', fontWeight: 700, flexWrap: 'wrap' }}>
+                            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: '#059669', marginRight: '6px' }} />Ordered</span>
+                            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: '#f59e0b', marginRight: '6px' }} />Visited only</span>
+                            {totalVisits === 0 && <span style={{ color: '#94a3b8' }}>No visits recorded yet in this period.</span>}
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Charts Row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
+                {/* Daily Sales Bar Chart */}
+                <div style={{ background: 'white', borderRadius: '20px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
+                    <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                        📊 Daily Sales Revenue
+                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '200px', padding: '0 4px' }}>
+                        {Object.entries(dailySales).map(([day, amount]) => (
+                            <div key={day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', height: '100%', justifyContent: 'flex-end' }}>
+                                <div
+                                    style={{
+                                        width: '100%',
+                                        maxWidth: '32px',
+                                        height: `${Math.max((amount / maxDailySale) * 100, 2)}%`,
+                                        background: amount > 0 
+                                            ? 'linear-gradient(180deg, #059669 0%, #10b981 100%)' 
+                                            : '#e2e8f0',
+                                        borderRadius: '6px 6px 2px 2px',
+                                        transition: 'height 0.5s ease',
+                                        minHeight: '4px',
+                                        position: 'relative'
+                                    }}
+                                    title={`${day}: ₱${amount.toLocaleString()}`}
+                                />
+                                <span style={{ fontSize: '0.55rem', color: '#94a3b8', fontWeight: 700, transform: 'rotate(-45deg)', transformOrigin: 'center', whiteSpace: 'nowrap' }}>
+                                    {day}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Order Status Distribution */}
+                <div style={{ background: 'white', borderRadius: '20px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
+                    <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                        📋 Order Status
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {[
+                            { label: 'Completed', count: completedOrders.length, color: '#059669', bg: '#ecfdf5' },
+                            { label: 'Pending', count: pendingOrders.length, color: '#d97706', bg: '#fffbeb' },
+                            { label: 'Cancelled', count: cancelledOrders.length, color: '#dc2626', bg: '#fef2f2' }
+                        ].map(s => (
+                            <div key={s.label}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: s.color }}>{s.label}</span>
+                                    <span style={{ fontSize: '0.82rem', fontWeight: 900, color: s.color }}>{s.count}</span>
+                                </div>
+                                <div style={{ height: '10px', background: '#f1f5f9', borderRadius: '999px', overflow: 'hidden' }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${filteredOrders.length > 0 ? (s.count / filteredOrders.length) * 100 : 0}%`,
+                                        background: s.color,
+                                        borderRadius: '999px',
+                                        transition: 'width 0.6s ease'
+                                    }} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Order Type Breakdown */}
+                    <h4 style={{ margin: '24px 0 12px', fontSize: '0.88rem', fontWeight: 800, color: '#475569' }}>By Order Type</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {Object.entries(orderTypeCount).map(([type, count]) => (
+                            <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f8fafc', borderRadius: '10px' }}>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', textTransform: 'capitalize' }}>{type}</span>
+                                <span style={{ background: '#0c250d', color: '#F9B700', padding: '2px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 900 }}>{count}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Top Products */}
+            <div style={{ background: 'white', borderRadius: '20px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 15px rgba(0,0,0,0.04)' }}>
+                <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 900, color: '#0c250d', fontFamily: 'Outfit, sans-serif' }}>
+                    🏆 Top Selling Products
+                </h3>
+                {topProducts.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8', fontSize: '0.9rem' }}>
+                        No sales data available for this period
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {topProducts.map(([name, count], idx) => (
+                            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: idx === 0 ? 'linear-gradient(135deg, rgba(249,183,0,0.08) 0%, rgba(249,183,0,0.02) 100%)' : '#f8fafc', borderRadius: '14px', border: idx === 0 ? '1.5px solid rgba(249,183,0,0.3)' : '1px solid #e2e8f0' }}>
+                                <div style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '10px',
+                                    background: idx === 0 ? '#F9B700' : idx === 1 ? '#94a3b8' : idx === 2 ? '#cd7f32' : '#e2e8f0',
+                                    color: idx < 3 ? 'white' : '#64748b',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: 900,
+                                    fontSize: '0.85rem',
+                                    flexShrink: 0
+                                }}>
+                                    {idx + 1}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <div style={{ width: '120px', height: '8px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
+                                        <div style={{
+                                            height: '100%',
+                                            width: `${(count / maxProductCount) * 100}%`,
+                                            background: idx === 0 ? '#F9B700' : 'linear-gradient(90deg, #059669, #10b981)',
+                                            borderRadius: '999px',
+                                            transition: 'width 0.5s ease'
+                                        }} />
+                                    </div>
+                                    <span style={{ fontWeight: 900, fontSize: '0.88rem', color: '#059669', minWidth: '40px', textAlign: 'right' }}>{count} sold</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 export default AdminDashboard;

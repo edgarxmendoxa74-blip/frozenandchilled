@@ -7,7 +7,7 @@ export const AuthProvider = ({ children }) => {
         // DEVELOPMENT ONLY: Check for test user
         const testUser = localStorage.getItem('admin_test_user');
         if (testUser === 'true') {
-            const email = localStorage.getItem('admin_test_email') || 'admin@example.com';
+            const email = localStorage.getItem('admin_test_email') || 'admin@chilledandfrozenhub.com';
             return { email, id: 'test-admin-dev', aud: 'authenticated' };
         }
         return null;
@@ -23,7 +23,7 @@ export const AuthProvider = ({ children }) => {
         const testUser = localStorage.getItem('admin_test_user');
         if (testUser === 'true') {
             setCurrentUser({
-                email: localStorage.getItem('admin_test_email') || 'admin@example.com',
+                email: localStorage.getItem('admin_test_email') || 'admin@chilledandfrozenhub.com',
                 id: 'test-admin-dev',
                 aud: 'authenticated'
             });
