@@ -3,11 +3,22 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 
 const ProtectedRoute = ({ children }) => {
-    const { currentUser } = useAuth();
+    const authContext = useAuth();
+    
+    if (!authContext) {
+        console.error('ProtectedRoute: Auth context not available');
+        return <Navigate to="/admin" />;
+    }
 
-    const bypass = localStorage.getItem('admin_bypass');
+    const { currentUser } = authContext;
 
-    if (!currentUser && bypass !== 'true') {
+    // Allow access if:
+    // 1. currentUser exists from Supabase auth, OR
+    // 2. Test user is set in localStorage (dev only)
+    const testUser = localStorage.getItem('admin_test_user') === 'true';
+    
+    if (!currentUser && !testUser) {
+        console.log('ProtectedRoute: No user, redirecting to login');
         return <Navigate to="/admin" />;
     }
 

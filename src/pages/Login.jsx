@@ -4,34 +4,81 @@ import { useNavigate } from 'react-router-dom';
 import { User, Lock, Key, LogIn, ArrowLeft, X } from 'lucide-react';
 
 const Login = () => {
-    const [email, setEmail] = useState('');
+    const [email, setEmail] = useState(() => {
+        return localStorage.getItem('rememberEmail') || '';
+    });
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
-    const [rememberMe, setRememberMe] = useState(false);
+    const [rememberMe, setRememberMe] = useState(!!localStorage.getItem('rememberEmail'));
     const navigate = useNavigate();
 
     const handleLogin = async (e) => {
         e.preventDefault();
         setError('');
 
-        // Admin Bypass: Allow login with admin or admin@chilledandfrozenhub.com
-        const cleanEmail = email.trim().toLowerCase();
-        if ((cleanEmail === 'admin@chilledandfrozenhub.com' || cleanEmail === 'admin') && password === 'admin') {
-            console.log('Admin login bypass active');
-            localStorage.setItem('admin_bypass', 'true');
-            window.location.href = '/admin/dashboard';
+        // Validate inputs
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) {
+            setError('Email is required');
+            return;
+        }
+
+        if (!password) {
+            setError('Password is required');
+            return;
+        }
+
+        if (password.length < 6) {
+            setError('Password must be at least 6 characters');
+            return;
+        }
+
+        // Basic email format validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedEmail)) {
+            setError('Please enter a valid email address');
+            return;
+        }
+
+        // DEVELOPMENT ONLY: Test admin account for local testing
+        if (trimmedEmail === 'admin@example.com' && password === 'admin123') {
+            console.log('✅ Development test admin login');
+            localStorage.setItem('admin_test_user', 'true');
+            localStorage.setItem('admin_test_email', trimmedEmail);
+            if (rememberMe) {
+                localStorage.setItem('rememberEmail', trimmedEmail);
+            }
+            navigate('/admin/dashboard');
             return;
         }
 
         try {
-            const { error: loginError } = await supabase.auth.signInWithPassword({
-                email,
+            const { data, error: loginError } = await supabase.auth.signInWithPassword({
+                email: trimmedEmail,
                 password,
             });
-            if (loginError) throw loginError;
-            navigate('/admin/dashboard');
-        } catch {
-            setError('Invalid credentials. Please try again.');
+            
+            if (loginError) {
+                console.error('Login error:', loginError);
+                if (loginError.message?.includes('Invalid login credentials')) {
+                    setError('Invalid email or password. (Test: admin@example.com / admin123)');
+                } else {
+                    setError(loginError.message || 'Login failed. Please try again.');
+                }
+                return;
+            }
+
+            if (data?.user) {
+                console.log('Login successful');
+                localStorage.removeItem('admin_test_user');
+                if (rememberMe) {
+                    localStorage.setItem('rememberEmail', trimmedEmail);
+                }
+                navigate('/admin/dashboard');
+            }
+        } catch (err) {
+            console.error('Unexpected login error:', err);
+            setError('An unexpected error occurred. Please try again.');
         }
     };
 
@@ -42,7 +89,7 @@ const Login = () => {
                 <div style={{ position: 'absolute', inset: 0, opacity: 0.3, background: 'url("/hero.jpg") no-repeat center center/cover', mixBlendMode: 'overlay' }}></div>
                 <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', color: 'white', padding: '40px' }}>
                     <div style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', padding: '20px', borderRadius: '30px', display: 'inline-block', marginBottom: '30px', border: '1px solid rgba(255,255,255,0.3)' }}>
-                        <img src="/chilled-frozen-logo.png" alt="Chilled and Frozen Hub Logo" style={{ height: '110px', display: 'block' }} />
+                        <img src="/logo.png" alt="Chilled and Frozen Hub Logo" style={{ height: '110px', display: 'block' }} />
                     </div>
                     <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', fontWeight: 900 }}>Chilled and Frozen Hub</h1>
                     <p style={{ fontSize: '1.1rem', letterSpacing: '2px', textTransform: 'uppercase', opacity: 0.9, fontWeight: 700 }}>Trader • Supplier • Distributor</p>

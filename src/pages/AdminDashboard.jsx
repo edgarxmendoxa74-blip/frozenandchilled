@@ -162,7 +162,7 @@ const AdminDashboard = () => {
             store_name: 'Chilled and Frozen Hub',
             address: 'Caltex Road, Banaba South, Batangas City',
             contact: '09947246294 / 09949314800',
-            logo_url: '/chilled-frozen-logo.png',
+            logo_url: '/logo.png',
             banner_images: []
         };
     });
@@ -366,12 +366,54 @@ const AdminDashboard = () => {
         const handleSubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
+            
+            // Validation
+            const name = formData.get('name')?.trim();
+            const categoryId = formData.get('categoryId');
+            const price = Number(formData.get('price'));
+            const promoPrice = formData.get('promoPrice') ? Number(formData.get('promoPrice')) : null;
+            
+            if (!name || name.length === 0) {
+                showMessage('❌ Product name is required');
+                return;
+            }
+            
+            if (name.length < 3) {
+                showMessage('❌ Product name must be at least 3 characters');
+                return;
+            }
+            
+            if (!categoryId) {
+                showMessage('❌ Please select a category');
+                return;
+            }
+            
+            if (!price || price <= 0) {
+                showMessage('❌ Price must be a valid positive number');
+                return;
+            }
+            
+            if (price > 1000000) {
+                showMessage('❌ Price seems too high. Please verify.');
+                return;
+            }
+            
+            if (promoPrice !== null && promoPrice <= 0) {
+                showMessage('❌ Promo price must be a positive number');
+                return;
+            }
+            
+            if (promoPrice !== null && promoPrice >= price) {
+                showMessage('❌ Promo price must be less than regular price');
+                return;
+            }
+            
             const itemData = {
-                name: formData.get('name'),
+                name,
                 description: formData.get('description'),
-                price: Number(formData.get('price')),
-                promo_price: formData.get('promoPrice') ? Number(formData.get('promoPrice')) : null,
-                category_id: formData.get('categoryId'),
+                price,
+                promo_price: promoPrice,
+                category_id: categoryId,
                 image: editingItem.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80',
                 variations: tempVariations,
                 flavors: tempFlavors,
@@ -388,14 +430,19 @@ const AdminDashboard = () => {
 
             let finalItem;
             if (editingItem.id === 'new') {
-                if (!itemData.category_id) { showMessage('Please select a category first.'); return; }
+                if (!itemData.category_id) {
+                    showMessage('❌ Please select a category first.');
+                    return;
+                }
                 try {
                     const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
                     if (error) throw error;
                     finalItem = data;
+                    showMessage('✅ Product created successfully!');
                 } catch (err) {
                     console.log('Supabase product insert notice:', err);
                     finalItem = { ...itemData, id: 'item_' + Date.now() };
+                    showMessage('✅ Product saved locally (Supabase sync may pending)');
                 }
                 const updated = [...items, finalItem];
                 setItems(updated);
@@ -410,9 +457,11 @@ const AdminDashboard = () => {
                     }
                     if (res.error) throw res.error;
                     finalItem = res.data;
+                    showMessage('✅ Product updated successfully!');
                 } catch (err) {
                     console.log('Supabase product update notice:', err);
                     finalItem = { ...itemData, id: editingItem.id };
+                    showMessage('✅ Product updated locally (Supabase sync may pending)');
                 }
                 const updated = items.map(i => i.id === editingItem.id || i.name === editingItem.name ? { ...i, ...finalItem } : i);
                 setItems(updated);
@@ -420,26 +469,68 @@ const AdminDashboard = () => {
             }
 
             setEditingItem(null);
-            showMessage('Product catalog details saved successfully!');
         };
 
         const deleteItem = async (id) => {
             if (window.confirm('Are you sure you want to delete this product?')) {
                 const target = items.find(i => i.id === id);
                 try {
+                    let error = null;
                     if (isUUID(id)) {
-                        await supabase.from('menu_items').delete().eq('id', id);
+                        const result = await supabase.from('menu_items').delete().eq('id', id);
+                        error = result.error;
                     } else if (target) {
-                        await supabase.from('menu_items').delete().eq('name', target.name);
+                        const result = await supabase.from('menu_items').delete().eq('name', target.name);
+                        error = result.error;
+                    }
+                    
+                    if (error) {
+                        console.error('Delete error:', error);
+                        showMessage('⚠️ Deleted locally (server sync may be pending)');
+                    } else {
+                        showMessage('✓ Product deleted successfully!');
                     }
                 } catch (err) {
-                    console.log('Supabase product delete notice:', err);
+                    console.error('Delete exception:', err);
+                    showMessage('⚠️ Deleted locally (server sync failed)');
                 }
+                
                 const updated = items.filter(i => i.id !== id);
                 setItems(updated);
                 localStorage.setItem('menuItems', JSON.stringify(updated));
-                showMessage('Product deleted.');
+                
+                // Dispatch event with small delay to ensure listener is ready
+                setTimeout(() => {
+                    window.dispatchEvent(new Event('store_data_updated'));
+                }, 100);
             }
+        };
+
+        const deleteAllItems = async () => {
+            if (!window.confirm(`⚠️ Are you sure you want to DELETE ALL ${items.length} products? This action cannot be undone!`)) return;
+            
+            try {
+                // Delete from Supabase
+                const result = await supabase.from('menu_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                
+                if (result.error) {
+                    console.error('Delete error:', result.error);
+                    showMessage('⚠️ Deleted locally (server sync may be pending)');
+                } else {
+                    showMessage('✓ All products deleted successfully!');
+                }
+            } catch (err) {
+                console.error('Error deleting all items:', err);
+                showMessage('⚠️ Deleted locally (server sync failed)');
+            }
+            
+            setItems([]);
+            localStorage.setItem('menuItems', JSON.stringify([]));
+            
+            // Dispatch event with small delay
+            setTimeout(() => {
+                window.dispatchEvent(new Event('store_data_updated'));
+            }, 100);
         };
 
         const filteredItems = items.filter(item => {
@@ -474,6 +565,13 @@ const AdminDashboard = () => {
                         </select>
                         <button onClick={() => setEditingItem({ id: 'new', category_id: categories[0]?.id, stock: 20, low_stock_threshold: 5, unit: 'kg' })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 800, cursor: 'pointer' }}>
                             <Plus size={18} /> Add New Product
+                        </button>
+                        <button 
+                            onClick={deleteAllItems} 
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', fontWeight: 800, cursor: 'pointer' }}
+                            title="Delete all products"
+                        >
+                            <Trash2 size={18} /> Delete All
                         </button>
                     </div>
                 </div>
@@ -2334,7 +2432,7 @@ const AdminDashboard = () => {
             }}>
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '36px', paddingLeft: '6px' }}>
-                        <img src={storeSettings.logo_url || "/chilled-frozen-logo.png"} alt="Logo" style={{ height: '42px', width: '42px', borderRadius: '50%', border: '2px solid #F9B700', background: 'white', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = '/chilled-frozen-logo.png'; }} />
+                        <img src={storeSettings.logo_url || "/logo.png"} alt="Logo" style={{ height: '42px', width: '42px', borderRadius: '50%', border: '2px solid #F9B700', background: 'white', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = '/logo.png'; }} />
                         <div>
                             <div style={{ fontSize: '1.02rem', fontWeight: 900, color: '#F9B700', lineHeight: 1.1 }}>Chilled & Frozen</div>
                             <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600 }}>Admin Portal</span>

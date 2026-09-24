@@ -5,22 +5,24 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.en
 
 // Enhanced debug logging for configuration issues
 console.log('🔧 Supabase Client Configuration:');
-console.log('📍 URL:', supabaseUrl || '❌ MISSING');
-console.log('🔑 Key (first 10 chars):', supabaseAnonKey?.substring(0, 10) + '...' || '❌ MISSING');
-console.log('🔑 Key length:', supabaseAnonKey?.length || 0);
-console.log('🔑 Key starts with "eyJ":', supabaseAnonKey?.startsWith('eyJ') || false);
+console.log('📍 URL:', supabaseUrl ? '✅ Present' : '❌ MISSING');
+console.log('🔑 Key:', supabaseAnonKey ? '✅ Present' : '❌ MISSING');
 
-// Validate configuration
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('❌ SUPABASE CONFIGURATION ERROR:');
-    console.error('Missing URL or key. Check your .env file!');
-    console.error('URL present:', !!supabaseUrl);
-    console.error('Key present:', !!supabaseAnonKey);
-} else if (!supabaseAnonKey.startsWith('eyJ')) {
-    console.error('❌ INVALID SUPABASE KEY:');
-    console.error('Supabase anon keys should start with "eyJ" (JWT format)');
-    console.error('Current key starts with:', supabaseAnonKey.substring(0, 10));
-    console.error('Key length:', supabaseAnonKey.length, '(should be 500+ chars)');
+// Strict validation - throw errors to prevent silent failures
+if (!supabaseUrl) {
+    throw new Error('❌ SUPABASE CONFIGURATION ERROR: Missing VITE_SUPABASE_URL. Check your .env file!');
+}
+
+if (!supabaseAnonKey) {
+    throw new Error('❌ SUPABASE CONFIGURATION ERROR: Missing VITE_SUPABASE_ANON_KEY. Check your .env file!');
+}
+
+if (!supabaseAnonKey.startsWith('eyJ')) {
+    throw new Error('❌ INVALID SUPABASE KEY: Supabase anon keys should start with "eyJ" (JWT format). Current key starts with: ' + supabaseAnonKey.substring(0, 10));
+}
+
+if (supabaseAnonKey.length < 100) {
+    throw new Error('❌ INVALID SUPABASE KEY: Key appears too short (should be 500+ chars). Current length: ' + supabaseAnonKey.length);
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

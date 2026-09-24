@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Search, FileSpreadsheet, Package, Store, ArrowLeft, X, Edit2, 
   Trash2, Layers, AlertTriangle, CheckCircle2, LayoutGrid, List, 
@@ -95,9 +95,20 @@ const Inventory = () => {
   const [allItems, setAllItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [localStockState, setLocalStockState] = useState({});
+  const [savingStockIds, setSavingStockIds] = useState(new Set()); // Track which items are being saved
+  const [deletingItemIds, setDeletingItemIds] = useState(new Set()); // Track which items are being deleted
+  const [deletingAllItems, setDeletingAllItems] = useState(false); // Track if deleting all items
+  const saveTimeoutsRef = useRef({}); // Store debounce timeouts
 
   useEffect(() => {
     fetchData();
+    
+    // Cleanup: flush all pending saves on unmount
+    return () => {
+      Object.keys(saveTimeoutsRef.current).forEach(itemId => {
+        clearTimeout(saveTimeoutsRef.current[itemId]);
+      });
+    };
   }, []);
 
   const fetchData = async () => {
@@ -233,12 +244,27 @@ const Inventory = () => {
     }));
   };
 
-  const saveIndividualStock = async (item) => {
+  const saveIndividualStock = (item) => {
+    // Clear any existing timeout for this item (debounce)
+    if (saveTimeoutsRef.current[item.id]) {
+      clearTimeout(saveTimeoutsRef.current[item.id]);
+    }
+
+    // Set a new timeout for this item
+    saveTimeoutsRef.current[item.id] = setTimeout(() => {
+      performSaveStock(item);
+    }, 500); // Wait 500ms after last change before saving
+  };
+
+  const performSaveStock = async (item) => {
     const stockData = localStockState[item.id];
     if (!stockData) return;
 
     const updatedQty = stockData.stock;
     const isOut = updatedQty === 0;
+
+    // Mark as saving
+    setSavingStockIds(prev => new Set(prev).add(item.id));
 
     try {
       const { error } = await supabase
@@ -246,20 +272,31 @@ const Inventory = () => {
         .update({ stock: updatedQty, out_of_stock: isOut })
         .eq('id', item.id);
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       const updated = allItems.map(i => i.id === item.id ? { ...i, stock: updatedQty, out_of_stock: isOut } : i);
       setAllItems(updated);
       localStorage.setItem('menuItems', JSON.stringify(updated));
       window.dispatchEvent(new Event('store_data_updated'));
-      showMessage(`✓ Stock updated for "${item.name}" (${updatedQty} ${item.unit || 'kg'})`);
+      showMessage(`✅ Stock updated for "${item.name}" (${updatedQty} ${item.unit || 'kg'})`);
     } catch (err) {
       console.error('Error saving stock:', err);
+      showMessage(`⚠️ Failed to sync stock to server, saved locally for "${item.name}"`);
+      // Still update locally
       const updated = allItems.map(i => i.id === item.id ? { ...i, stock: updatedQty, out_of_stock: isOut } : i);
       setAllItems(updated);
       localStorage.setItem('menuItems', JSON.stringify(updated));
       window.dispatchEvent(new Event('store_data_updated'));
-      showMessage(`✓ Stock saved locally for "${item.name}"`);
+    } finally {
+      // Mark as done saving
+      setSavingStockIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(item.id);
+        return newSet;
+      });
+      delete saveTimeoutsRef.current[item.id];
     }
   };
 
@@ -395,20 +432,99 @@ const Inventory = () => {
   const handleDeleteItem = async (item) => {
     if (!window.confirm(`Sigurado ka bang gustong burahin ang "${item.name}" sa inventory?`)) return;
     
+    // Mark item as deleting
+    setDeletingItemIds(prev => new Set(prev).add(item.id));
+
     try {
       const { error } = await supabase.from('menu_items').delete().eq('id', item.id);
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       
       const updated = allItems.filter(i => i.id !== item.id);
       setAllItems(updated);
       localStorage.setItem('menuItems', JSON.stringify(updated));
-      showMessage(`✓ Burado na ang "${item.name}" sa inventory`);
+      
+      // Dispatch event with small delay
+      setTimeout(() => {
+        window.dispatchEvent(new Event('store_data_updated'));
+      }, 100);
+      showMessage(`✅ Burado na ang "${item.name}" sa inventory`);
     } catch (err) {
       console.error('Error deleting item:', err);
+      showMessage(`⚠️ Failed to delete from server, removing locally`);
       const updated = allItems.filter(i => i.id !== item.id);
       setAllItems(updated);
       localStorage.setItem('menuItems', JSON.stringify(updated));
-      showMessage(`✓ Burado na si "${item.name}" (Local update)`);
+      
+      // Dispatch event with small delay
+      setTimeout(() => {
+        window.dispatchEvent(new Event('store_data_updated'));
+      }, 100);
+    } finally {
+      // Mark item as done deleting
+      setDeletingItemIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(item.id);
+        return newSet;
+      });
+    }
+  };
+
+  const handleDeleteAllItems = async () => {
+    console.log('🗑️ Delete All button clicked!');
+    console.log('📊 Current items count:', allItems.length);
+    
+    if (!window.confirm(`⚠️ Sigurado ka bang gustong burahin ang LAHAT ng ${allItems.length} items sa inventory? This action cannot be undone!`)) {
+      console.log('❌ User cancelled deletion');
+      return;
+    }
+    
+    setDeletingAllItems(true);
+    
+    try {
+      console.log('🚀 Starting deletion process...');
+      
+      // Delete from Supabase
+      console.log('🔥 Deleting from Supabase...');
+      const { error } = await supabase.from('menu_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Supabase deletion successful');
+      console.log('🧹 Clearing local state...');
+      
+      setAllItems([]);
+      setLocalStockState({});
+      localStorage.setItem('menuItems', JSON.stringify([]));
+      
+      // Dispatch event with small delay
+      setTimeout(() => {
+        window.dispatchEvent(new Event('store_data_updated'));
+      }, 100);
+      
+      console.log('✅ All items deleted successfully!');
+      showMessage('✅ Lahat ng items ay na-delete na!');
+      
+    } catch (err) {
+      console.error('❌ Error deleting all items:', err);
+      console.log('🔄 Fallback: clearing local data only...');
+      
+      setAllItems([]);
+      setLocalStockState({});
+      localStorage.setItem('menuItems', JSON.stringify([]));
+      
+      // Dispatch event with small delay
+      setTimeout(() => {
+        window.dispatchEvent(new Event('store_data_updated'));
+      }, 100);
+      showMessage('⚠️ Deletion completed locally (server sync may be pending)');
+    } finally {
+      console.log('🏁 Delete process completed');
+      setDeletingAllItems(false);
+      setIsLoading(false);
     }
   };
 
@@ -612,6 +728,14 @@ const Inventory = () => {
             </button>
             <button className="btn-tool" onClick={fetchData} title="Refresh Data">
               <RefreshCw size={16} />
+            </button>
+            <button 
+              className="btn-tool" 
+              onClick={handleDeleteAllItems} 
+              title="Delete All Items"
+              style={{ background: '#fee2e2', color: '#dc2626', borderColor: '#fecaca' }}
+            >
+              <Trash2 size={16} /> Delete All
             </button>
           </div>
         </div>
