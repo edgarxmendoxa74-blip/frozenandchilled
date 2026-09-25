@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { safeSetCache } from '../storageCache';
 import {
     LayoutDashboard,
     LogOut,
@@ -226,7 +227,7 @@ const AdminDashboard = () => {
                     // No items in database, use fallback from MenuData.js with UUID category references
                     console.log('📦 No menu items in database, using MenuData.js fallback with UUID category references');
                     setItems(initialItems.map(normalizeItem));
-                    localStorage.setItem('menuItems', JSON.stringify(initialItems.map(normalizeItem)));
+                    safeSetCache('menuItems', initialItems.map(normalizeItem));
                 }
 
                 const { data: payData } = await supabase.from('payment_settings').select('*');
@@ -484,7 +485,7 @@ const AdminDashboard = () => {
                 }
                 const updated = [...items, finalItem];
                 setItems(updated);
-                localStorage.setItem('menuItems', JSON.stringify(updated));
+                safeSetCache('menuItems', updated);
             } else {
                 try {
                     let res;
@@ -503,7 +504,7 @@ const AdminDashboard = () => {
                 }
                 const updated = items.map(i => i.id === editingItem.id || i.name === editingItem.name ? { ...i, ...finalItem } : i);
                 setItems(updated);
-                localStorage.setItem('menuItems', JSON.stringify(updated));
+                safeSetCache('menuItems', updated);
             }
 
             window.dispatchEvent(new Event('store_data_updated'));
@@ -528,7 +529,7 @@ const AdminDashboard = () => {
 
                 const updated = items.filter(i => i.id !== id);
                 setItems(updated);
-                localStorage.setItem('menuItems', JSON.stringify(updated));
+                safeSetCache('menuItems', updated);
                 
                 // Dispatch event with small delay to ensure listener is ready
                 setTimeout(() => {
@@ -555,7 +556,7 @@ const AdminDashboard = () => {
             }
             
             setItems([]);
-            localStorage.setItem('menuItems', JSON.stringify([]));
+            safeSetCache('menuItems', []);
             
             // Dispatch event with small delay
             setTimeout(() => {
@@ -1075,7 +1076,7 @@ const AdminDashboard = () => {
                 item.categoryId !== id
             );
             setItems(updatedItems);
-            localStorage.setItem('menuItems', JSON.stringify(updatedItems));
+            safeSetCache('menuItems', updatedItems);
             console.log('🧹 Items cleaned up, removed:', items.length - updatedItems.length, 'items');
             
             if (itemCount > 0) {

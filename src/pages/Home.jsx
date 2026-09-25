@@ -26,6 +26,7 @@ import {
 import { Link } from 'react-router-dom';
 import { categories as initialCategories, menuItems } from '../data/MenuData';
 import { supabase } from '../supabaseClient';
+import { safeSetCache } from '../storageCache';
 import { recordStoreVisit, markVisitOrdered } from '../visitTracking';
 
 // Delivery locations with charge from store
@@ -190,7 +191,7 @@ const Home = () => {
                 let combinedItems;
                 if (!itemError && itemData) {
                     combinedItems = itemData.map(normalizeItem);
-                    localStorage.setItem('menuItems', JSON.stringify(combinedItems));
+                    safeSetCache('menuItems', combinedItems);
                 } else {
                     const cachedItems = readCache('menuItems');
                     combinedItems = (cachedItems.length > 0 ? cachedItems : menuItems).map(normalizeItem);
@@ -888,7 +889,7 @@ Thank you!`;
             }
 
             setItems(updatedItemsList);
-            localStorage.setItem('menuItems', JSON.stringify(updatedItemsList));
+            safeSetCache('menuItems', updatedItemsList);
             window.dispatchEvent(new Event('store_data_updated'));
         } catch (err) {
             console.error('Error auto-updating inventory stocks/boxes:', err);

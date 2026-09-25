@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { safeSetCache } from '../storageCache';
 import { categories as initialCategories, menuItems as initialItems } from '../data/MenuData';
 import './Inventory.css';
 
@@ -180,7 +181,7 @@ const Inventory = () => {
       });
       setLocalStockState(initialStock);
 
-      localStorage.setItem('menuItems', JSON.stringify(fetchedItems));
+      safeSetCache('menuItems', fetchedItems);
     } catch (err) {
       console.error('Error fetching inventory data:', err);
       const saved = localStorage.getItem('menuItems');
@@ -283,7 +284,7 @@ const Inventory = () => {
 
       const updated = allItems.map(i => i.id === item.id ? { ...i, stock: updatedQty, out_of_stock: isOut } : i);
       setAllItems(updated);
-      localStorage.setItem('menuItems', JSON.stringify(updated));
+      safeSetCache('menuItems', updated);
       window.dispatchEvent(new Event('store_data_updated'));
       showMessage(`✅ Stock updated for "${item.name}" (${updatedQty} ${item.unit || 'kg'})`);
     } catch (err) {
@@ -447,7 +448,7 @@ const Inventory = () => {
       
       const updated = allItems.filter(i => i.id !== item.id);
       setAllItems(updated);
-      localStorage.setItem('menuItems', JSON.stringify(updated));
+      safeSetCache('menuItems', updated);
       
       // Dispatch event with small delay
       setTimeout(() => {
@@ -497,7 +498,7 @@ const Inventory = () => {
       
       setAllItems([]);
       setLocalStockState({});
-      localStorage.setItem('menuItems', JSON.stringify([]));
+      safeSetCache('menuItems', []);
       
       // Dispatch event with small delay
       setTimeout(() => {
@@ -561,7 +562,7 @@ const Inventory = () => {
         }
       }));
       
-      localStorage.setItem('menuItems', JSON.stringify(nextItems));
+      safeSetCache('menuItems', nextItems);
       window.dispatchEvent(new Event('store_data_updated'));
       setShowNewBatchModal(false);
       setShowEditModal(false);
