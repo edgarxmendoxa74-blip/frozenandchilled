@@ -291,7 +291,7 @@ const AdminDashboard = () => {
             : await supabase.from('store_settings').insert([payload]).select().single();
         if (error) throw error;
         setStoreSettings(data);
-        localStorage.setItem('storeSettings', JSON.stringify(data));
+        safeSetCache('storeSettings', data);
         return data;
     };
 

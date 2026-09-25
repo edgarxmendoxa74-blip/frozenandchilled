@@ -29,6 +29,13 @@ import { supabase } from '../supabaseClient';
 import { safeSetCache } from '../storageCache';
 import { recordStoreVisit, markVisitOrdered } from '../visitTracking';
 
+// Stock photos shown only when the admin hasn't set any slideshow images.
+const DEFAULT_BANNERS = [
+    'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&q=80'
+];
+
 // Delivery locations with charge from store
 const DELIVERY_LOCATIONS = [
     { name: 'Poblacion', charge: 35 },
@@ -92,19 +99,24 @@ const Home = () => {
         { id: 'delivery', name: 'Delivery' },
         { id: 'lalamove-delivery', name: 'Lalamove Delivery' }
     ]);
-    const [storeSettings, setStoreSettings] = useState({
-        manual_status: 'auto',
-        open_time: '08:00',
-        close_time: '19:00',
-        store_name: 'Chilled and Frozen Hub',
-        address: 'Caltex Road, Banaba South, Batangas City',
-        contact: '09947246294 / 09949314800',
-        logo_url: '/chilled-frozen-logo.png',
-        banner_images: [
-            'https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&q=80'
-        ]
+    const [storeSettings, setStoreSettings] = useState(() => {
+        // Start from the last banners this browser saw, never from stock photos,
+        // so the slideshow doesn't flash images the admin didn't choose.
+        let cachedBanners = [];
+        try {
+            const cached = JSON.parse(localStorage.getItem('storeSettings') || 'null');
+            if (Array.isArray(cached?.banner_images)) cachedBanners = cached.banner_images.filter(Boolean);
+        } catch { /* ignore */ }
+        return {
+            manual_status: 'auto',
+            open_time: '08:00',
+            close_time: '19:00',
+            store_name: 'Chilled and Frozen Hub',
+            address: 'Caltex Road, Banaba South, Batangas City',
+            contact: '09947246294 / 09949314800',
+            logo_url: '/chilled-frozen-logo.png',
+            banner_images: cachedBanners
+        };
     });
 
     const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
@@ -291,14 +303,18 @@ const Home = () => {
                 if (storeData) {
                     // Database is the source of truth; localStorage is only an offline fallback
                     // (it can hold stale data from other projects served on the same localhost port).
+                    const dbBanners = (storeData.banner_images || []).filter(Boolean);
                     setStoreSettings(prev => ({
                         ...prev,
                         ...storeData,
-                        banner_images: storeData.banner_images?.length > 0 ? storeData.banner_images : prev.banner_images
+                        banner_images: dbBanners.length > 0 ? dbBanners : DEFAULT_BANNERS
                     }));
-                    localStorage.setItem('storeSettings', JSON.stringify(storeData));
+                    safeSetCache('storeSettings', storeData);
                 } else if (savedStore) {
-                    setStoreSettings(savedStore);
+                    const cachedBanners = (savedStore.banner_images || []).filter(Boolean);
+                    setStoreSettings(prev => ({ ...prev, ...savedStore, banner_images: cachedBanners.length > 0 ? cachedBanners : DEFAULT_BANNERS }));
+                } else {
+                    setStoreSettings(prev => (prev.banner_images.length > 0 ? prev : { ...prev, banner_images: DEFAULT_BANNERS }));
                 }
             } finally {
                 setIsLoading(false);
@@ -361,14 +377,20 @@ const Home = () => {
         if (count > 0) setCurrentBannerIndex(prev => (prev - 1 + count) % count);
     };
 
+    // Only restart the slideshow when the actual images change, not on every 30s refresh.
+    const bannerKey = (storeSettings.banner_images || []).join('|');
+
     useEffect(() => {
         const bannerCount = (storeSettings.banner_images || []).length;
+        // A shorter list would leave the index pointing at a slide that no longer exists.
+        setCurrentBannerIndex(0);
         if (bannerCount === 0) return;
         const timer = setInterval(() => {
             setCurrentBannerIndex(prev => (prev + 1) % bannerCount);
         }, 5000);
         return () => clearInterval(timer);
-    }, [storeSettings.banner_images]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bannerKey]);
 
     // Selection state for products with options
     const [selectedProduct, setSelectedProduct] = useState(null);
@@ -999,13 +1021,13 @@ Thank you!`;
                     <div className="hero-image-container">
                         {(storeSettings.banner_images || []).map((url, i) => (
                             <img
-                                key={i}
+                                key={`${i}-${url}`}
                                 src={url}
                                 alt={`Hero Banner ${i + 1}`}
                                 className="hero-image"
                                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                 style={{
-                                    position: i === 0 ? 'relative' : 'absolute',
+                                    position: 'absolute',
                                     top: 0,
                                     left: 0,
                                     opacity: currentBannerIndex === i ? 1 : 0,
