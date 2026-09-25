@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS menu_items (
     price DECIMAL(10, 2) NOT NULL,
     promo_price DECIMAL(10, 2),
     image TEXT,
-    stock INTEGER DEFAULT 20,
-    low_stock_threshold INTEGER DEFAULT 5,
+    stock NUMERIC(10, 3) DEFAULT 20,            -- kg, decimals allowed (e.g. 45.3)
+    low_stock_threshold NUMERIC(10, 3) DEFAULT 5,
     unit TEXT DEFAULT 'kg',
     min_order_note TEXT,
     out_of_stock BOOLEAN DEFAULT FALSE,

@@ -60,6 +60,17 @@ const AdminDashboard = () => {
     // --- STATE MANAGEMENT ---
     const isUUID = (str) => Boolean(str && typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
+    // Explains why a menu change didn't reach the database (and so won't show on the website).
+    // An update blocked by row-level security matches zero rows, which .single() reports as PGRST116.
+    const describeSaveError = (err) => {
+        if (err?.code === 'PGRST116' || err?.code === '42501' || /row-level security|permission denied/i.test(err?.message || '')) {
+            return localStorage.getItem('admin_test_user') === 'true'
+                ? 'the database refused the change. You are logged in with the offline test account — log out and sign in with your real Supabase admin account.'
+                : 'the database refused the change (check the Supabase row-level security policies).';
+        }
+        return err?.message || 'database connection issue';
+    };
+
     const normalizeItem = (item) => ({
         ...item,
         category_id: item.category_id || item.categoryId || '',
@@ -459,15 +470,17 @@ const AdminDashboard = () => {
                     showMessage('❌ Please select a category first.');
                     return;
                 }
+                // A change that isn't in the database never reaches the website menu,
+                // so a failed save is reported instead of being kept only in this browser.
                 try {
                     const { data, error } = await supabase.from('menu_items').insert([itemData]).select().single();
                     if (error) throw error;
                     finalItem = data;
                     showMessage('✅ Product created successfully!');
                 } catch (err) {
-                    console.log('Supabase product insert notice:', err);
-                    finalItem = { ...itemData, id: 'item_' + Date.now() };
-                    showMessage('✅ Product saved locally (Supabase sync may pending)');
+                    console.error('Supabase product insert error:', err);
+                    showMessage(`❌ Product NOT saved to the website: ${describeSaveError(err)}`);
+                    return;
                 }
                 const updated = [...items, finalItem];
                 setItems(updated);
@@ -484,15 +497,16 @@ const AdminDashboard = () => {
                     finalItem = res.data;
                     showMessage('✅ Product updated successfully!');
                 } catch (err) {
-                    console.log('Supabase product update notice:', err);
-                    finalItem = { ...itemData, id: editingItem.id };
-                    showMessage('✅ Product updated locally (Supabase sync may pending)');
+                    console.error('Supabase product update error:', err);
+                    showMessage(`❌ Changes NOT saved to the website: ${describeSaveError(err)}`);
+                    return;
                 }
                 const updated = items.map(i => i.id === editingItem.id || i.name === editingItem.name ? { ...i, ...finalItem } : i);
                 setItems(updated);
                 localStorage.setItem('menuItems', JSON.stringify(updated));
             }
 
+            window.dispatchEvent(new Event('store_data_updated'));
             setEditingItem(null);
         };
 
@@ -500,26 +514,18 @@ const AdminDashboard = () => {
             if (window.confirm('Are you sure you want to delete this product?')) {
                 const target = items.find(i => i.id === id);
                 try {
-                    let error = null;
-                    if (isUUID(id)) {
-                        const result = await supabase.from('menu_items').delete().eq('id', id);
-                        error = result.error;
-                    } else if (target) {
-                        const result = await supabase.from('menu_items').delete().eq('name', target.name);
-                        error = result.error;
-                    }
-                    
-                    if (error) {
-                        console.error('Delete error:', error);
-                        showMessage('⚠️ Deleted locally (server sync may be pending)');
-                    } else {
-                        showMessage('✓ Product deleted successfully!');
-                    }
+                    const query = supabase.from('menu_items').delete();
+                    const { data, error } = await (isUUID(id) ? query.eq('id', id) : query.eq('name', target?.name)).select('id');
+                    if (error) throw error;
+                    // A delete blocked by row-level security returns no error, just zero rows.
+                    if (!data || data.length === 0) throw new Error('the database did not delete the product (not signed in as a real admin account?)');
+                    showMessage('✓ Product deleted successfully!');
                 } catch (err) {
-                    console.error('Delete exception:', err);
-                    showMessage('⚠️ Deleted locally (server sync failed)');
+                    console.error('Delete error:', err);
+                    showMessage(`❌ Product NOT deleted from the website: ${describeSaveError(err)}`);
+                    return;
                 }
-                
+
                 const updated = items.filter(i => i.id !== id);
                 setItems(updated);
                 localStorage.setItem('menuItems', JSON.stringify(updated));
@@ -536,17 +542,16 @@ const AdminDashboard = () => {
             
             try {
                 // Delete from Supabase
-                const result = await supabase.from('menu_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-                
-                if (result.error) {
-                    console.error('Delete error:', result.error);
-                    showMessage('⚠️ Deleted locally (server sync may be pending)');
-                } else {
-                    showMessage('✓ All products deleted successfully!');
+                const result = await supabase.from('menu_items').delete().neq('id', '00000000-0000-0000-0000-000000000000').select('id');
+                if (result.error) throw result.error;
+                if (items.length > 0 && (!result.data || result.data.length === 0)) {
+                    throw new Error('the database did not delete any products (not signed in as a real admin account?)');
                 }
+                showMessage('✓ All products deleted successfully!');
             } catch (err) {
                 console.error('Error deleting all items:', err);
-                showMessage('⚠️ Deleted locally (server sync failed)');
+                showMessage(`❌ Products NOT deleted from the website: ${describeSaveError(err)}`);
+                return;
             }
             
             setItems([]);
@@ -910,9 +915,9 @@ const AdminDashboard = () => {
                     console.log('✅ Category created successfully:', data);
                 } catch (err) {
                     console.error('❌ Supabase category insert error:', err);
-                    showMessage(`❌ Error saving category: ${err.message || 'Database connection issue'}`);
-                    // Fallback to local storage
-                    savedCat = { id: 'cat_' + Date.now(), name, sort_order: categories.length + 1 };
+                    showMessage(`❌ Category NOT saved to the website: ${describeSaveError(err)}`);
+                    setIsLoading(false);
+                    return;
                 }
                 
                 const updated = [...categories, savedCat];
@@ -943,9 +948,9 @@ const AdminDashboard = () => {
                     console.log('✅ Category updated successfully:', res.data);
                 } catch (err) {
                     console.error('❌ Supabase category update error:', err);
-                    showMessage(`❌ Error updating category: ${err.message || 'Database connection issue'}`);
-                    // Fallback to local update
-                    savedCat = { ...editingCat, name };
+                    showMessage(`❌ Category NOT saved to the website: ${describeSaveError(err)}`);
+                    setIsLoading(false);
+                    return;
                 }
                 
                 const updated = categories.map(c => 
@@ -956,7 +961,8 @@ const AdminDashboard = () => {
                 localStorage.setItem('categories', JSON.stringify(updated));
                 showMessage('✅ Category updated successfully!');
             }
-            
+
+            window.dispatchEvent(new Event('store_data_updated'));
             setEditingCat(null);
             setIsLoading(false);
         };
@@ -1007,8 +1013,16 @@ const AdminDashboard = () => {
                     deleteResult = await supabase
                         .from('categories')
                         .delete()
-                        .eq('id', id);
-                    
+                        .eq('id', id)
+                        .select('id');
+
+                    // A delete blocked by row-level security returns no error, just zero rows.
+                    if (!deleteResult.error && (!deleteResult.data || deleteResult.data.length === 0)) {
+                        showMessage('❌ Category NOT deleted from the website: the database refused the change (not signed in as a real admin account?)');
+                        setIsLoading(false);
+                        return;
+                    }
+
                     console.log('📝 Delete result:', deleteResult);
                     
                     if (deleteResult?.error) {
@@ -1071,6 +1085,7 @@ const AdminDashboard = () => {
             }
             
             console.log('🎉 Delete operation completed');
+            window.dispatchEvent(new Event('store_data_updated'));
             setIsLoading(false);
         };
 

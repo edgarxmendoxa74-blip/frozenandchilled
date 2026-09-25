@@ -146,8 +146,9 @@ const Home = () => {
 
     // Load data from Supabase (localStorage is used only as an offline fallback)
     useEffect(() => {
-        const fetchData = async () => {
-            setIsLoading(true);
+        // Only the first load shows the loading state; background refreshes update in place.
+        const fetchData = async (silent = false) => {
+            if (!silent) setIsLoading(true);
             try {
                 // 1 & 2. Categories and menu items.
                 // The database is the source of truth. The browser copy is only an offline fallback:
@@ -173,8 +174,10 @@ const Home = () => {
                     supabase.from('menu_items').select('*').order('sort_order', { ascending: true })
                 ]);
 
+                // Whenever the database answers, its result wins — even an empty list — so
+                // admin deletions show up. The browser cache is used only when the request fails.
                 let finalCats;
-                if (!catError && catData && catData.length > 0) {
+                if (!catError && catData) {
                     finalCats = dedupeByName(catData);
                     localStorage.setItem('categories', JSON.stringify(finalCats));
                 } else {
@@ -185,7 +188,7 @@ const Home = () => {
                 if (finalCats.length > 0) setActiveCategory(prev => prev || finalCats[0].id);
 
                 let combinedItems;
-                if (!itemError && itemData && itemData.length > 0) {
+                if (!itemError && itemData) {
                     combinedItems = itemData.map(normalizeItem);
                     localStorage.setItem('menuItems', JSON.stringify(combinedItems));
                 } else {
@@ -303,18 +306,46 @@ const Home = () => {
 
         fetchData();
 
+        // Coalesce bursts of change events (e.g. a category delete cascading to many items).
+        let reloadTimer = null;
         const handleReload = () => {
-            fetchData();
+            clearTimeout(reloadTimer);
+            reloadTimer = setTimeout(() => fetchData(true), 300);
+        };
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') handleReload();
         };
 
         window.addEventListener('storage', handleReload);
         window.addEventListener('store_data_updated', handleReload);
         window.addEventListener('focus', handleReload);
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        // Live updates: admin edits in the database are pushed to open menus on any device.
+        // Requires realtime to be enabled for these tables (see enable_realtime.sql).
+        const channel = supabase
+            .channel('public-menu')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, handleReload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, handleReload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, handleReload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_settings' }, handleReload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_locations' }, handleReload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'order_types' }, handleReload)
+            .subscribe();
+
+        // Fallback in case realtime is not enabled: re-check while the page is visible.
+        const pollTimer = setInterval(() => {
+            if (document.visibilityState === 'visible') fetchData(true);
+        }, 30000);
 
         return () => {
+            clearTimeout(reloadTimer);
+            clearInterval(pollTimer);
+            supabase.removeChannel(channel);
             window.removeEventListener('storage', handleReload);
             window.removeEventListener('store_data_updated', handleReload);
             window.removeEventListener('focus', handleReload);
+            document.removeEventListener('visibilitychange', handleVisibility);
         };
     }, []);
 
@@ -597,17 +628,23 @@ const Home = () => {
 
     // Helper: Reliably copy text to clipboard (works on iOS & Android)
     const copyToClipboard = async (text) => {
-        // Method 1: Modern Clipboard API
+        // Method 1: synchronous textarea copy. It runs inside the tap itself, so the browser
+        // still allows opening Messenger right after (an awaited copy can get the popup blocked).
+        if (copyWithTextarea(text)) return true;
+
+        // Method 2: Modern Clipboard API
         if (navigator.clipboard && navigator.clipboard.writeText) {
             try {
                 await navigator.clipboard.writeText(text);
                 return true;
             } catch (err) {
-                console.warn('Clipboard API failed, trying fallback:', err);
+                console.warn('Clipboard API failed:', err);
             }
         }
+        return false;
+    };
 
-        // Method 2: Fallback using textarea (works on most mobile browsers)
+    const copyWithTextarea = (text) => {
         try {
             const textarea = document.createElement('textarea');
             textarea.value = text;
@@ -631,12 +668,43 @@ const Home = () => {
                 textarea.select();
             }
 
-            document.execCommand('copy');
+            const ok = document.execCommand('copy');
             document.body.removeChild(textarea);
-            return true;
+            return ok;
         } catch (err) {
-            console.error('Fallback copy failed:', err);
+            console.warn('Textarea copy failed:', err);
             return false;
+        }
+    };
+
+    // Facebook Page username for Messenger
+    const MESSENGER_PAGE_ID = 'TraderSupplierWholesaler';
+
+    // Opens the store's Messenger chat. "text" pre-fills the receipt where Messenger supports it
+    // (it is not an official parameter, so the clipboard copy is the reliable path).
+    // A new tab keeps this page — and the receipt panel — open behind Messenger.
+    const openMessenger = (message) => {
+        const messengerUrl = `https://m.me/${MESSENGER_PAGE_ID}?text=${encodeURIComponent(message)}`;
+        const win = window.open(messengerUrl, '_blank');
+        return Boolean(win);
+    };
+
+    // Receipt panel shown after sending: { message, copied, lalamoveReminder }
+    const [sentOrder, setSentOrder] = useState(null);
+    const [receiptCopied, setReceiptCopied] = useState(false);
+
+    const handleCopyReceipt = async () => {
+        const ok = await copyToClipboard(sentOrder.message);
+        setReceiptCopied(ok);
+        if (!ok) alert('Could not copy automatically. Press and hold the order text below, then choose Copy.');
+    };
+
+    const handleOpenMessengerAgain = async () => {
+        const ok = await copyToClipboard(sentOrder.message);
+        setReceiptCopied(ok);
+        if (!openMessenger(sentOrder.message)) {
+            // Popup blocked: go to Messenger in this tab instead.
+            window.location.href = `https://m.me/${MESSENGER_PAGE_ID}?text=${encodeURIComponent(sentOrder.message)}`;
         }
     };
 
@@ -668,6 +736,46 @@ const Home = () => {
             if (item.selectedAddons && item.selectedAddons.length > 0) d += ` + ${item.selectedAddons.map(a => a.name).join(', ')}`;
             return d;
         });
+
+        // --- PREPARE MESSENGER MSG ---
+        let customerInfoStr = `Name: ${customerDetails.name}`;
+
+        if (orderType === 'pickup') customerInfoStr += `\nPhone: ${customerDetails.phone}\nPickup Time: ${customerDetails.pickup_time}`;
+        if (orderType === 'delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nDelivery Location: ${customerDetails.delivery_location}\nAddress: ${customerDetails.address}${customerDetails.landmark ? `\nLandmark: ${customerDetails.landmark}` : ''}`;
+        if (orderType.includes('lalamove')) customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}${customerDetails.landmark ? `\nLandmark: ${customerDetails.landmark}` : ''}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
+
+        let amountBreakdown = `Subtotal: ₱${cartSubtotal}`;
+        if (orderType === 'delivery' && deliveryCharge > 0) {
+            amountBreakdown += `\nDelivery Charge (${customerDetails.delivery_location}): ₱${deliveryCharge}`;
+        }
+        amountBreakdown += `\nTOTAL: ₱${cartTotal}`;
+
+        const message = `Hello! I'd like to place an order:
+
+Order Type: ${orderType.toUpperCase()}
+Payment Method: ${paymentSettings.find(m => m.id === paymentMethod)?.name || paymentMethod}
+
+Customer Details:
+${customerInfoStr}
+
+Item Details:
+${itemDetails.map((item, i) => `${i + 1}. ${item}`).join('\n')}
+
+${amountBreakdown}
+
+Thank you!`;
+
+        // Copy the full order and open Messenger right away, while the browser still treats this
+        // as part of the customer's tap (otherwise copying or opening Messenger can be blocked).
+        const copied = await copyToClipboard(message);
+        const opened = openMessenger(message);
+
+        const lalamoveReminder = orderType.includes('lalamove')
+            ? 'Lalamove Delivery: the store will confirm your order first, then tell you the Lalamove delivery charge before booking.'
+            : '';
+        setIsCheckoutOpen(false);
+        setReceiptCopied(copied);
+        setSentOrder({ message, copied, opened, lalamoveReminder });
 
         const newOrder = {
             order_type: orderType,
@@ -762,74 +870,7 @@ const Home = () => {
             console.error('Error auto-updating inventory stocks/boxes:', err);
         }
 
-        // --- PREPARE MESSENGER MSG ---
-        const orderDetailsStr = itemDetails.join('\n');
-        let customerInfoStr = `Name: ${customerDetails.name}`;
-
-        if (orderType === 'pickup') customerInfoStr += `\nPhone: ${customerDetails.phone}\nPickup Time: ${customerDetails.pickup_time}`;
-        if (orderType === 'delivery') customerInfoStr += `\nPhone: ${customerDetails.phone}\nDelivery Location: ${customerDetails.delivery_location}\nAddress: ${customerDetails.address}\nLandmark: ${customerDetails.landmark}`;
-        if (orderType.includes('lalamove')) customerInfoStr += `\nPhone: ${customerDetails.phone}\nAddress: ${customerDetails.address}${customerDetails.landmark ? `\nLandmark: ${customerDetails.landmark}` : ''}${customerDetails.lalamove_note ? `\nNote: ${customerDetails.lalamove_note}` : ''}`;
-
-        let amountBreakdown = `Subtotal: ₱${cartSubtotal}`;
-        if (orderType === 'delivery' && deliveryCharge > 0) {
-            amountBreakdown += `\nDelivery Charge: ₱${deliveryCharge}`;
-        }
-        amountBreakdown += `\nTOTAL: ₱${cartTotal}`;
-
-        const message = `Hello! I'd like to place an order:
-
-Order Type: ${orderType.toUpperCase()}
-Payment Method: ${paymentSettings.find(m => m.id === paymentMethod)?.name || paymentMethod}
-
-Customer Details:
-${customerInfoStr}
-
-Item Details:
-${orderDetailsStr}
-
-${amountBreakdown}
-
-Thank you!`;
-
-        // Facebook Page ID or Username for Messenger
-        const pageId = 'chilledandfrozenhubmeatshop';
-
-        // Step 1: Copy order details to clipboard FIRST (before opening Messenger)
-        const copied = await copyToClipboard(message);
-
-        // Step 2: Close checkout modal
-        setIsCheckoutOpen(false);
-
-        // Step 3: Show instruction to user
-        const lalamoveReminder = orderType === 'lalamove delivery'
-            ? '\n\n🛵 Lalamove Delivery reminder: After sending your order, the store will confirm your order first. Once confirmed, they will let you know the Lalamove delivery charge before you proceed with booking.'
-            : '';
-        if (copied) {
-            alert(`✅ Your order receipt is ready!\n\nMessenger will open now with your receipt already typed in — just tap SEND.\n\nIf the message box is empty, long-press and PASTE (your receipt is copied).${lalamoveReminder}`);
-        } else {
-            alert(`✅ Your order receipt is ready!\n\nMessenger will open now with your receipt already typed in — just tap SEND.${lalamoveReminder}`);
-        }
-
-        // Step 4: Open Messenger using the most reliable method for each platform
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-        // m.me opens the Messenger app on mobile or messenger.com on desktop.
-        // "text" pre-fills the receipt in the message box so the customer only taps Send.
-        // It is not an officially documented parameter, so the clipboard copy above stays as a backup.
-        const messengerUrl = `https://m.me/${pageId}?text=${encodeURIComponent(message)}`;
-
-        if (isMobile) {
-            // On mobile, use window.location.href for m.me
-            // This lets the OS handle the deep link naturally:
-            //   - If Messenger app is installed → opens the app
-            //   - If not installed → opens in browser
-            window.location.href = messengerUrl;
-        } else {
-            // Desktop: open in new tab
-            window.open(messengerUrl, '_blank');
-        }
-
-        // Clear cart after successful order
+        // Clear cart after successful order (the receipt panel keeps its own copy of the message)
         setTimeout(() => {
             setCart([]);
             setCustomerDetails({ name: '', phone: '', table_number: '', address: '', landmark: '', pickup_time: '', delivery_location: '', lalamove_note: '' });
@@ -1319,7 +1360,7 @@ Thank you!`;
                             </ul>
                             <h4 className="footer-col-title" style={{ fontSize: '0.8rem', marginBottom: '8px' }}>Connect With Us</h4>
                             <div className="footer-social-row">
-                                <a href="https://facebook.com/chilledandfrozenhubmeatshop" target="_blank" rel="noreferrer" className="footer-social-link" title="Facebook Page">
+                                <a href="https://facebook.com/TraderSupplierWholesaler" target="_blank" rel="noreferrer" className="footer-social-link" title="Facebook Page">
                                     <Facebook size={18} />
                                 </a>
                                 <a href={`tel:${storeSettings.contact}`} className="footer-social-link" title="Call Store">
@@ -1930,11 +1971,65 @@ Thank you!`;
                                 <MessageSquare size={22} /> Send Order via Messenger
                             </button>
                             <p style={{ margin: '10px 0 0', fontSize: '0.78rem', color: '#64748b', textAlign: 'center' }}>
-                                Your order details will be copied, then Messenger opens so you can paste and send them to the store.
+                                Your full order is copied automatically and Messenger opens — just paste it in the message box and tap Send.
                             </p>
                             </>)}
                         </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Order receipt panel: stays open behind Messenger so the customer can copy / resend it */}
+            {sentOrder && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+                    <div style={{ background: 'white', borderRadius: '20px', width: '100%', maxWidth: '480px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
+                        <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                            <CheckCircle size={28} color="#16a34a" style={{ flexShrink: 0 }} />
+                            <div style={{ flex: 1 }}>
+                                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Almost done — send it on Messenger</h3>
+                                <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#475569' }}>
+                                    {receiptCopied ? 'Your full order details are copied.' : 'Copy your order details below.'}
+                                </p>
+                            </div>
+                            <button onClick={() => setSentOrder(null)} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}><X size={22} /></button>
+                        </div>
+
+                        <ol style={{ margin: '0 20px 12px', padding: '12px 12px 12px 32px', background: '#eff6ff', borderRadius: '12px', fontSize: '0.88rem', color: '#1e3a8a', lineHeight: 1.6 }}>
+                            <li>Open the store's chat in Messenger{sentOrder.opened ? ' (it opened in a new tab)' : ''}.</li>
+                            <li>If the message box is empty, <b>press and hold</b> it and tap <b>Paste</b>.</li>
+                            <li>Tap <b>Send</b>.</li>
+                        </ol>
+
+                        <textarea
+                            readOnly
+                            value={sentOrder.message}
+                            onFocus={(e) => e.target.select()}
+                            style={{ margin: '0 20px', flex: 1, minHeight: '160px', resize: 'none', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', fontFamily: 'inherit', fontSize: '0.85rem', color: '#0f172a', background: '#f8fafc' }}
+                        />
+
+                        {sentOrder.lalamoveReminder && (
+                            <p style={{ margin: '12px 20px 0', fontSize: '0.82rem', color: '#92400e', background: '#fef3c7', borderRadius: '10px', padding: '10px 12px' }}>
+                                🛵 {sentOrder.lalamoveReminder}
+                            </p>
+                        )}
+
+                        <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <button
+                                type="button"
+                                onClick={handleOpenMessengerAgain}
+                                style={{ width: '100%', padding: '15px', borderRadius: '14px', border: 'none', background: 'linear-gradient(135deg, #0084ff 0%, #a334fa 100%)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}
+                            >
+                                <MessageSquare size={20} /> {sentOrder.opened ? 'Open Messenger Again' : 'Open Messenger'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleCopyReceipt}
+                                style={{ width: '100%', padding: '13px', borderRadius: '14px', border: '2px solid #0084ff', background: 'white', color: '#0084ff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer' }}
+                            >
+                                <Copy size={18} /> {receiptCopied ? 'Copied ✓ — Copy Again' : 'Copy Order Details'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

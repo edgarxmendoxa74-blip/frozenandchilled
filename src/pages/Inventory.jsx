@@ -267,13 +267,18 @@ const Inventory = () => {
     setSavingStockIds(prev => new Set(prev).add(item.id));
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('menu_items')
         .update({ stock: updatedQty, out_of_stock: isOut })
-        .eq('id', item.id);
+        .eq('id', item.id)
+        .select('id');
 
       if (error) {
         throw error;
+      }
+      // An update blocked by row-level security returns no error, just zero rows.
+      if (!data || data.length === 0) {
+        throw new Error('the database refused the change (sign in with your real Supabase admin account)');
       }
 
       const updated = allItems.map(i => i.id === item.id ? { ...i, stock: updatedQty, out_of_stock: isOut } : i);
@@ -283,12 +288,8 @@ const Inventory = () => {
       showMessage(`✅ Stock updated for "${item.name}" (${updatedQty} ${item.unit || 'kg'})`);
     } catch (err) {
       console.error('Error saving stock:', err);
-      showMessage(`⚠️ Failed to sync stock to server, saved locally for "${item.name}"`);
-      // Still update locally
-      const updated = allItems.map(i => i.id === item.id ? { ...i, stock: updatedQty, out_of_stock: isOut } : i);
-      setAllItems(updated);
-      localStorage.setItem('menuItems', JSON.stringify(updated));
-      window.dispatchEvent(new Event('store_data_updated'));
+      // Not kept locally: a change that isn't in the database never shows on the website menu.
+      showMessage(`❌ Stock NOT saved to the website for "${item.name}": ${err.message}`);
     } finally {
       // Mark as done saving
       setSavingStockIds(prev => {
@@ -436,9 +437,12 @@ const Inventory = () => {
     setDeletingItemIds(prev => new Set(prev).add(item.id));
 
     try {
-      const { error } = await supabase.from('menu_items').delete().eq('id', item.id);
+      const { data, error } = await supabase.from('menu_items').delete().eq('id', item.id).select('id');
       if (error) {
         throw error;
+      }
+      if (!data || data.length === 0) {
+        throw new Error('the database refused the change (sign in with your real Supabase admin account)');
       }
       
       const updated = allItems.filter(i => i.id !== item.id);
@@ -452,15 +456,7 @@ const Inventory = () => {
       showMessage(`✅ "${item.name}" was deleted from the inventory`);
     } catch (err) {
       console.error('Error deleting item:', err);
-      showMessage(`⚠️ Failed to delete from server, removing locally`);
-      const updated = allItems.filter(i => i.id !== item.id);
-      setAllItems(updated);
-      localStorage.setItem('menuItems', JSON.stringify(updated));
-      
-      // Dispatch event with small delay
-      setTimeout(() => {
-        window.dispatchEvent(new Event('store_data_updated'));
-      }, 100);
+      showMessage(`❌ "${item.name}" NOT deleted from the website: ${err.message}`);
     } finally {
       // Mark item as done deleting
       setDeletingItemIds(prev => {
@@ -487,10 +483,13 @@ const Inventory = () => {
       
       // Delete from Supabase
       console.log('🔥 Deleting from Supabase...');
-      const { error } = await supabase.from('menu_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { data, error } = await supabase.from('menu_items').delete().neq('id', '00000000-0000-0000-0000-000000000000').select('id');
       if (error) {
         console.error('❌ Supabase error:', error);
         throw error;
+      }
+      if (allItems.length > 0 && (!data || data.length === 0)) {
+        throw new Error('the database refused the change (sign in with your real Supabase admin account)');
       }
       
       console.log('✅ Supabase deletion successful');
@@ -510,17 +509,7 @@ const Inventory = () => {
       
     } catch (err) {
       console.error('❌ Error deleting all items:', err);
-      console.log('🔄 Fallback: clearing local data only...');
-      
-      setAllItems([]);
-      setLocalStockState({});
-      localStorage.setItem('menuItems', JSON.stringify([]));
-      
-      // Dispatch event with small delay
-      setTimeout(() => {
-        window.dispatchEvent(new Event('store_data_updated'));
-      }, 100);
-      showMessage('⚠️ Deletion completed locally (server sync may be pending)');
+      showMessage(`❌ Items NOT deleted from the website: ${err.message}`);
     } finally {
       console.log('🏁 Delete process completed');
       setDeletingAllItems(false);
@@ -579,17 +568,13 @@ const Inventory = () => {
       setEditingItem(null);
     } catch (err) {
       console.error('Error saving item:', err);
-      const fallbackItem = { ...(editingItem || {}), ...itemData, id: editingItem?.id || 'item_' + Date.now() };
-      const updated = editingItem 
-        ? allItems.map(i => i.id === editingItem.id ? fallbackItem : i)
-        : [fallbackItem, ...allItems];
-      setAllItems(updated);
-      localStorage.setItem('menuItems', JSON.stringify(updated));
-      window.dispatchEvent(new Event('store_data_updated'));
-      setShowNewBatchModal(false);
-      setShowEditModal(false);
-      setEditingItem(null);
-      showMessage(`⚠ Not saved to database (saved on this device only): ${err.message}`);
+      // Keep the form open so nothing typed is lost; the change is not on the website yet.
+      const reason = err?.code === 'PGRST116'
+        ? 'the database refused the change (sign in with your real Supabase admin account)'
+        : err?.code === '22P02' && /integer/i.test(err.message || '')
+          ? 'the database only accepts whole-number stock. Run fix_decimal_stock.sql in the Supabase SQL Editor to allow kg decimals like 45.3.'
+          : err.message;
+      showMessage(`❌ NOT saved to the website: ${reason}`);
     }
   };
 
@@ -1073,6 +1058,76 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
   });
 
   const [_imagePreview, setImagePreview] = useState(item?.image || '');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageStatus, setImageStatus] = useState('');
+  const imageInputRef = useRef(null);
+
+  // Shrinks phone photos (often 3-8 MB) to a max 900px JPEG so the menu stays fast.
+  const resizeImage = (file, maxSize = 900, quality = 0.82) => new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Could not process image'))), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Unsupported image file')); };
+    img.src = url;
+  });
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow picking the same file again
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setImageStatus('❌ Please choose an image file.');
+      return;
+    }
+
+    setIsUploadingImage(true);
+    setImageStatus('Uploading image...');
+    try {
+      const blob = await resizeImage(file);
+      const filePath = `products/product_${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('products')
+        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (!uploadError) {
+        const { data } = supabase.storage.from('products').getPublicUrl(filePath);
+        if (data?.publicUrl) {
+          setFormData(prev => ({ ...prev, image: data.publicUrl }));
+          setImagePreview(data.publicUrl);
+          setImageStatus('✅ Image uploaded. Click Save to apply it.');
+          return;
+        }
+      }
+
+      // Storage bucket not available: store the resized image inside the product instead.
+      console.warn('Storage upload failed, using embedded image:', uploadError);
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      setFormData(prev => ({ ...prev, image: dataUrl }));
+      setImagePreview(dataUrl);
+      setImageStatus('✅ Image ready (saved with the product). Click Save to apply it.');
+    } catch (err) {
+      console.error('Image upload error:', err);
+      setImageStatus(`❌ Could not upload image: ${err.message}`);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   useEffect(() => {
     if (item && Array.isArray(item.boxes) && item.boxes.length > 0) {
@@ -1165,7 +1220,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
       promo_price: formData.promo_price ? parseFloat(formData.promo_price) : null,
       stock: finalStock,
       boxes: generatedBoxes,
-      low_stock_threshold: parseInt(formData.low_stock_threshold, 10) || 5,
+      low_stock_threshold: parseFloat(formData.low_stock_threshold) || 5,
       out_of_stock: Boolean(formData.out_of_stock || finalStock === 0),
       description: formData.description || ''
     });
@@ -1264,14 +1319,60 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
             </div>
 
             <div className="form-group-item" style={{ margin: 0 }}>
-              <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Image URL</label>
-              <input 
-                type="text"
-                className="form-input-styled"
-                value={formData.image || ''}
-                onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                placeholder="https://example.com/image.jpg"
-              />
+              <label style={{ fontWeight: 700, fontSize: '0.88rem', color: '#334155' }}>Product Image</label>
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ width: '96px', height: '96px', borderRadius: '14px', border: '2px dashed #cbd5e1', background: '#f8fafc', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {formData.image ? (
+                    <img
+                      src={formData.image}
+                      alt="Product preview"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <ImageIcon size={30} color="#94a3b8" />
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '180px' }}>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    style={{ display: 'none' }}
+                  />
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={isUploadingImage}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '10px', border: 'none', background: '#1e8b00', color: 'white', fontWeight: 700, fontSize: '0.85rem', cursor: isUploadingImage ? 'wait' : 'pointer', opacity: isUploadingImage ? 0.7 : 1 }}
+                    >
+                      <Camera size={16} /> {isUploadingImage ? 'Uploading...' : formData.image ? 'Change Image' : 'Upload Image'}
+                    </button>
+                    {formData.image && !isUploadingImage && (
+                      <button
+                        type="button"
+                        onClick={() => { setFormData(prev => ({ ...prev, image: '' })); setImagePreview(''); setImageStatus(''); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 12px', borderRadius: '10px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
+                      >
+                        <Trash2 size={15} /> Remove
+                      </button>
+                    )}
+                  </div>
+                  {imageStatus && (
+                    <span style={{ fontSize: '0.8rem', color: imageStatus.startsWith('❌') ? '#dc2626' : '#475569' }}>{imageStatus}</span>
+                  )}
+                  <input
+                    type="text"
+                    className="form-input-styled"
+                    value={formData.image?.startsWith('data:') ? '' : (formData.image || '')}
+                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                    placeholder="or paste an image link (https://...)"
+                    style={{ fontSize: '0.82rem' }}
+                  />
+                </div>
+              </div>
             </div>
 
             {/* BOX WEIGHT CARD SECTION - EXACT MATCH TO USER IMAGE */}

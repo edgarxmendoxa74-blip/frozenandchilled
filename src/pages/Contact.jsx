@@ -101,7 +101,7 @@ const Contact = () => {
                     </p>
                     <p style={{ marginBottom: '40px', color: 'rgba(255,255,255,0.9)' }}>Connect with us directly on Facebook Messenger for wholesale inquiries and fast checkout.</p>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
-                        <a href="https://m.me/chilledandfrozenhubmeatshop" target="_blank" rel="noopener noreferrer" style={{ background: 'var(--secondary)', color: 'var(--primary-dark)', padding: '15px 30px', borderRadius: '50px', textDecoration: 'none', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <a href="https://m.me/TraderSupplierWholesaler" target="_blank" rel="noopener noreferrer" style={{ background: 'var(--secondary)', color: 'var(--primary-dark)', padding: '15px 30px', borderRadius: '50px', textDecoration: 'none', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <Facebook size={20} />
                             Messenger Chat
                         </a>
