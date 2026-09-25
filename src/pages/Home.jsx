@@ -378,6 +378,19 @@ const Home = () => {
         addons: []
     });
 
+    // Helper: a box's price per kilo (its own, or the item's price)
+    const getBoxPricePerKg = (box, item) => (
+        (box.pricePerKg !== undefined && box.pricePerKg !== null && box.pricePerKg !== '')
+            ? Number(box.pricePerKg)
+            : Number(item.promo_price || item.price)
+    );
+
+    // Helper: a box's total — weight × price per kilo, unless the admin typed a custom total
+    const getBoxPrice = (box, item) => {
+        if (box.priceManual && box.price !== undefined && box.price !== null && box.price !== '') return Number(box.price);
+        return Number(((Number(box.weight) || 0) * getBoxPricePerKg(box, item)).toFixed(2));
+    };
+
     // Helper: Get available box/weight stocks for any menu item connected to live inventory
     const getItemBoxes = (item) => {
         if (!item) return [];
@@ -511,13 +524,7 @@ const Home = () => {
         let basePrice;
 
         if (options.box) {
-            // Use box's own price if set in inventory, otherwise compute from box's pricePerKg or item price
-            if (options.box.price !== undefined && options.box.price !== null && options.box.price !== '') {
-                basePrice = Number(options.box.price);
-            } else {
-                const boxPKg = (options.box.pricePerKg !== undefined && options.box.pricePerKg !== '') ? Number(options.box.pricePerKg) : itemPricePerKg;
-                basePrice = Number((options.box.weight * boxPKg).toFixed(2));
-            }
+            basePrice = getBoxPrice(options.box, item);
         } else {
             const variationPrice = options.variation ? Number(options.variation.price) : 0;
             if (item.name?.toLowerCase().includes('pork ribs')) {
@@ -692,12 +699,6 @@ const Home = () => {
     // Receipt panel shown after sending: { message, copied, lalamoveReminder }
     const [sentOrder, setSentOrder] = useState(null);
     const [receiptCopied, setReceiptCopied] = useState(false);
-
-    const handleCopyReceipt = async () => {
-        const ok = await copyToClipboard(sentOrder.message);
-        setReceiptCopied(ok);
-        if (!ok) alert('Could not copy automatically. Press and hold the order text below, then choose Copy.');
-    };
 
     const handleOpenMessengerAgain = async () => {
         const ok = await copyToClipboard(sentOrder.message);
@@ -1406,11 +1407,7 @@ Thank you!`;
                                     {getItemBoxes(selectedProduct).map(b => {
                                         const isSold = Boolean(b.disabled || b.ordered);
                                         const isSelected = (selectionOptions.box?.id === b.id || selectionOptions.box?.name === b.name) && !isSold;
-                                        const itemPricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
-                                        const boxPKg = (b.pricePerKg !== undefined && b.pricePerKg !== '') ? Number(b.pricePerKg) : itemPricePerKg;
-                                        const computedBoxPrice = (b.price !== undefined && b.price !== null && b.price !== '') 
-                                            ? Number(b.price) 
-                                            : (b.weight * boxPKg);
+                                        const computedBoxPrice = getBoxPrice(b, selectedProduct);
 
                                         return (
                                             <button
@@ -1479,27 +1476,24 @@ Thank you!`;
                                             <div>
                                                 <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Price per Kilo</div>
                                                 <div style={{ fontWeight: 800, fontSize: '1rem', color: '#F9B700' }}>
-                                                    ₱{((selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : Number(selectedProduct.promo_price || selectedProduct.price)).toFixed(2)} / kg
+                                                    ₱{getBoxPricePerKg(selectionOptions.box, selectedProduct).toFixed(2)} / kg
                                                 </div>
                                             </div>
                                             <div>
                                                 <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Total Price</div>
                                                 <div style={{ fontWeight: 900, fontSize: '1.15rem', color: '#4ade80' }}>
-                                                    ₱{(() => {
-                                                        if (selectionOptions.box.price !== undefined && selectionOptions.box.price !== null && selectionOptions.box.price !== '') return Number(selectionOptions.box.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                                                        const bpkg = (selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : Number(selectedProduct.promo_price || selectedProduct.price);
-                                                        return (selectionOptions.box.weight * bpkg).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                                                    })()}
+                                                    ₱{getBoxPrice(selectionOptions.box, selectedProduct).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </div>
                                             </div>
                                         </div>
                                         <div style={{ fontSize: '0.78rem', color: '#cbd5e1', fontStyle: 'italic', textAlign: 'center' }}>
                                             {(() => {
-                                                const bpkg = (selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : Number(selectedProduct.promo_price || selectedProduct.price);
-                                                if (selectionOptions.box.price !== undefined && selectionOptions.box.price !== null && selectionOptions.box.price !== '') {
-                                                    return `Price: ₱${Number(selectionOptions.box.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                                const box = selectionOptions.box;
+                                                const total = getBoxPrice(box, selectedProduct).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                                if (box.priceManual && box.price !== undefined && box.price !== null && box.price !== '') {
+                                                    return `Price: ₱${total}`;
                                                 }
-                                                return `Calculation: ${selectionOptions.box.weight} kg × ₱${bpkg.toFixed(2)} = ₱${(selectionOptions.box.weight * bpkg).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                                return `Calculation: ${box.weight} kg × ₱${getBoxPricePerKg(box, selectedProduct).toFixed(2)} = ₱${total}`;
                                             })()}
                                         </div>
                                     </div>
@@ -1600,12 +1594,7 @@ Thank you!`;
                                 const itemPricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
                                 let base = itemPricePerKg;
                                 if (selectionOptions.box) {
-                                    if (selectionOptions.box.price !== undefined && selectionOptions.box.price !== null && selectionOptions.box.price !== '') {
-                                        base = Number(selectionOptions.box.price);
-                                    } else {
-                                        const bpkg = (selectionOptions.box.pricePerKg !== undefined && selectionOptions.box.pricePerKg !== '') ? Number(selectionOptions.box.pricePerKg) : itemPricePerKg;
-                                        base = selectionOptions.box.weight * bpkg;
-                                    }
+                                    base = getBoxPrice(selectionOptions.box, selectedProduct);
                                 } else if (selectionOptions.variation && Number(selectionOptions.variation.price) > 0) {
                                     base = selectedProduct.name?.toLowerCase().includes('pork ribs')
                                         ? itemPricePerKg + Number(selectionOptions.variation.price)
@@ -2021,13 +2010,6 @@ Thank you!`;
                                 style={{ width: '100%', padding: '15px', borderRadius: '14px', border: 'none', background: 'linear-gradient(135deg, #0084ff 0%, #a334fa 100%)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}
                             >
                                 <MessageSquare size={20} /> {sentOrder.opened ? 'Open Messenger Again' : 'Open Messenger'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleCopyReceipt}
-                                style={{ width: '100%', padding: '13px', borderRadius: '14px', border: '2px solid #0084ff', background: 'white', color: '#0084ff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer' }}
-                            >
-                                <Copy size={18} /> {receiptCopied ? 'Copied ✓ — Copy Again' : 'Copy Order Details'}
                             </button>
                         </div>
                     </div>

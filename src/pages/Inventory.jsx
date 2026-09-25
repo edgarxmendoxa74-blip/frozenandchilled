@@ -1048,6 +1048,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
         stockQty: b.stockQty !== undefined ? b.stockQty : 1,
         pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
         price: b.price !== undefined ? b.price : '',
+        priceManual: Boolean(b.priceManual),
         disabled: Boolean(b.disabled || b.ordered)
       }));
     }
@@ -1138,6 +1139,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
         stockQty: b.stockQty !== undefined ? b.stockQty : 1,
         pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
         price: b.price !== undefined ? b.price : '',
+        priceManual: Boolean(b.priceManual),
         disabled: Boolean(b.disabled || b.ordered)
       })));
     }
@@ -1202,16 +1204,23 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
 
     let generatedBoxes = item?.boxes || [];
     if (editableBoxes.length > 0) {
-      generatedBoxes = editableBoxes.map((b, i) => ({
-        id: b.id || `box-${i + 1}`,
-        name: b.name || `Box ${i + 1}`,
-        weight: parseFloat(b.weight) || 0,
-        stockQty: b.stockQty !== undefined && b.stockQty !== '' ? (parseInt(b.stockQty, 10) || 0) : 1,
-        pricePerKg: toNumberOrBlank(b.pricePerKg),
-        price: toNumberOrBlank(b.price),
-        disabled: Boolean(b.disabled),
-        ordered: Boolean(b.ordered || false) // Keep ordered separate from disabled
-      }));
+      generatedBoxes = editableBoxes.map((b, i) => {
+        const weight = parseFloat(b.weight) || 0;
+        const pricePerKg = toNumberOrBlank(b.pricePerKg);
+        // Total follows weight × price per kg unless the admin typed their own total
+        const priceManual = Boolean(b.priceManual) && b.price !== '' && b.price !== undefined && b.price !== null;
+        return {
+          id: b.id || `box-${i + 1}`,
+          name: b.name || `Box ${i + 1}`,
+          weight,
+          stockQty: b.stockQty !== undefined && b.stockQty !== '' ? (parseInt(b.stockQty, 10) || 0) : 1,
+          pricePerKg,
+          price: priceManual ? toNumberOrBlank(b.price) : Number((weight * (pricePerKg !== '' ? pricePerKg : finalPrice)).toFixed(2)),
+          priceManual,
+          disabled: Boolean(b.disabled),
+          ordered: Boolean(b.ordered || false) // Keep ordered separate from disabled
+        };
+      });
     }
 
     onSave({
@@ -1443,10 +1452,11 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                     const availCount = avail.length;
                     const availWeight = avail.reduce((sum, b) => sum + (parseFloat(b.weight) || 0), 0);
                     const totalVal = avail.reduce((sum, b) => {
-                      if (b.price !== undefined && b.price !== null && b.price !== '') {
+                      if (b.priceManual && b.price !== undefined && b.price !== null && b.price !== '') {
                         return sum + Number(b.price);
                       }
-                      return sum + ((parseFloat(b.weight) || 0) * unitPrice);
+                      const boxPKg = b.pricePerKg !== undefined && b.pricePerKg !== '' ? parseFloat(b.pricePerKg) : unitPrice;
+                      return sum + ((parseFloat(b.weight) || 0) * boxPKg);
                     }, 0);
 
                     return (
@@ -1514,7 +1524,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                       const unitPrice = parseFloat(formData.price || 0);
                       const boxPKg = b.pricePerKg !== undefined && b.pricePerKg !== '' ? parseFloat(b.pricePerKg) : unitPrice;
                       const computedPrice = ((parseFloat(b.weight) || 0) * boxPKg).toFixed(2);
-                      const displayPrice = (b.price !== undefined && b.price !== null && b.price !== '') ? b.price : computedPrice;
+                      const displayPrice = b.priceManual ? b.price : computedPrice;
 
                       return (
                         <div key={b.id || idx} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', background: 'white', padding: '12px', borderRadius: '12px', border: b.disabled ? '1px dashed #fca5a5' : '1px solid #cbd5e1', opacity: b.disabled ? 0.75 : 1 }}>
@@ -1537,11 +1547,7 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                               className="form-input-styled"
                               value={b.weight ?? ''}
                               onChange={(e) => {
-                                const raw = cleanDecimal(e.target.value);
-                                handleUpdateBox(idx, 'weight', raw);
-                                if (b.price === undefined || b.price === null || b.price === '') {
-                                  if (boxPKg > 0) handleUpdateBox(idx, 'price', Number(((parseFloat(raw) || 0) * boxPKg).toFixed(2)));
-                                }
+                                handleUpdateBox(idx, 'weight', cleanDecimal(e.target.value));
                               }}
                               placeholder="kg"
                               style={{ width: '70px', background: '#f8fafc', padding: '6px 8px', fontSize: '0.85rem' }}
@@ -1558,12 +1564,9 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                               className="form-input-styled"
                               value={b.pricePerKg !== undefined ? b.pricePerKg : ''}
                               onChange={(e) => {
-                                const customPKg = cleanDecimal(e.target.value);
-                                handleUpdateBox(idx, 'pricePerKg', customPKg);
-
-                                const currentW = parseFloat(b.weight) || 0;
-                                const activePKg = customPKg !== '' ? (parseFloat(customPKg) || 0) : unitPrice;
-                                handleUpdateBox(idx, 'price', Number((currentW * activePKg).toFixed(2)));
+                                handleUpdateBox(idx, 'pricePerKg', cleanDecimal(e.target.value));
+                                // A new price per kilo brings the total back to automatic
+                                handleUpdateBox(idx, 'priceManual', false);
                               }}
                               placeholder={unitPrice.toString()}
                               style={{ width: '70px', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#0284c7' }}
@@ -1592,8 +1595,13 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                               inputMode="decimal"
                               className="form-input-styled"
                               value={displayPrice}
-                              onChange={(e) => handleUpdateBox(idx, 'price', cleanDecimal(e.target.value))}
-                              placeholder="Total"
+                              onChange={(e) => {
+                                const raw = cleanDecimal(e.target.value);
+                                handleUpdateBox(idx, 'price', raw);
+                                // Clearing the field goes back to the automatic total
+                                handleUpdateBox(idx, 'priceManual', raw !== '');
+                              }}
+                              placeholder={computedPrice}
                               style={{ width: '85px', background: '#f0fdf4', border: '1px solid #a7f3d0', padding: '6px 8px', fontSize: '0.85rem', fontWeight: 800, color: '#059669' }}
                             />
                           </div>
