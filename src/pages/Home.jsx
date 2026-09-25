@@ -395,7 +395,7 @@ const Home = () => {
     // Selection state for products with options
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [selectionOptions, setSelectionOptions] = useState({
-        box: null,
+        boxes: [],
         variation: null,
         flavors: [],
         addons: []
@@ -531,7 +531,7 @@ const Home = () => {
 
         setSelectedProduct(item);
         setSelectionOptions({
-            box: firstBox,
+            boxes: firstBox ? [firstBox] : [],
             variation: firstVariation,
             flavors: initialFlavor,
             addons: []
@@ -539,42 +539,48 @@ const Home = () => {
     };
 
     const addToCart = (item, options) => {
-        const boxKey = options.box ? (options.box.id || options.box.name) : '';
-        const cartItemId = `${item.id}-${boxKey}-${options.variation?.name || ''}-${(options.flavors || []).sort().join(',')}-${(options.addons || []).map(a => a.name).join(',')}`;
-        const existing = cart.find(i => i.cartItemId === cartItemId);
-
         const itemPricePerKg = Number(item.promo_price || item.price);
-        let basePrice;
-
-        if (options.box) {
-            basePrice = getBoxPrice(options.box, item);
-        } else {
-            const variationPrice = options.variation ? Number(options.variation.price) : 0;
-            if (item.name?.toLowerCase().includes('pork ribs')) {
-                basePrice = itemPricePerKg + variationPrice;
-            } else {
-                basePrice = variationPrice > 0 ? variationPrice : itemPricePerKg;
-            }
-        }
-
         const addonsPrice = (options.addons || []).reduce((sum, a) => sum + Number(a.price), 0);
-        const finalPrice = Number((basePrice + addonsPrice).toFixed(2));
+        // Each selected box becomes its own cart line, so each box is deducted from stock on checkout
+        const boxesToAdd = (options.boxes && options.boxes.length > 0) ? options.boxes : [null];
 
-        if (existing) {
-            setCart(cart.map(i => i.cartItemId === cartItemId ? { ...i, quantity: i.quantity + 1 } : i));
-        } else {
-            setCart([...cart, {
-                ...item,
-                cartItemId,
-                selectedBox: options.box,
-                pricePerKg: itemPricePerKg,
-                selectedVariation: options.variation,
-                selectedFlavors: options.flavors,
-                selectedAddons: options.addons,
-                finalPrice,
-                quantity: 1
-            }]);
-        }
+        let nextCart = [...cart];
+        boxesToAdd.forEach(box => {
+            const boxKey = box ? (box.id || box.name) : '';
+            const cartItemId = `${item.id}-${boxKey}-${options.variation?.name || ''}-${(options.flavors || []).sort().join(',')}-${(options.addons || []).map(a => a.name).join(',')}`;
+            const existing = nextCart.find(i => i.cartItemId === cartItemId);
+
+            let basePrice;
+            if (box) {
+                basePrice = getBoxPrice(box, item);
+            } else {
+                const variationPrice = options.variation ? Number(options.variation.price) : 0;
+                if (item.name?.toLowerCase().includes('pork ribs')) {
+                    basePrice = itemPricePerKg + variationPrice;
+                } else {
+                    basePrice = variationPrice > 0 ? variationPrice : itemPricePerKg;
+                }
+            }
+            const finalPrice = Number((basePrice + addonsPrice).toFixed(2));
+
+            if (existing) {
+                // A box is one physical unit — don't double it if it's already in the cart
+                if (!box) nextCart = nextCart.map(i => i.cartItemId === cartItemId ? { ...i, quantity: i.quantity + 1 } : i);
+            } else {
+                nextCart.push({
+                    ...item,
+                    cartItemId,
+                    selectedBox: box,
+                    pricePerKg: itemPricePerKg,
+                    selectedVariation: options.variation,
+                    selectedFlavors: options.flavors,
+                    selectedAddons: options.addons,
+                    finalPrice,
+                    quantity: 1
+                });
+            }
+        });
+        setCart(nextCart);
         setSelectedProduct(null);
         // Go straight to checkout: order type → payment method → send via Messenger
         setIsCartOpen(false);
@@ -842,6 +848,7 @@ Thank you!`;
         // --- DEDUCT STOCK & DISABLE ORDERED BOXES/VARIATIONS ---
         try {
             const updatedItemsList = [...items];
+            const changedItemIds = new Set();
             for (const cartItem of cart) {
                 const targetIdx = updatedItemsList.findIndex(i => (i.id && i.id === cartItem.id) || (i.name && i.name.toLowerCase().trim() === (cartItem.name || '').toLowerCase().trim()));
                 if (targetIdx !== -1) {
@@ -895,20 +902,21 @@ Thank you!`;
                     };
 
                     updatedItemsList[targetIdx] = updatedObj;
-
-                    // Update in Supabase database
-                    if (currentItem.id) {
-                        supabase.from('menu_items').update({
-                            stock: newStock,
-                            boxes: updatedBoxes,
-                            variations: updatedVariations,
-                            out_of_stock: isNowOutOfStock
-                        }).eq('id', currentItem.id).then(({ error }) => {
-                            if (error) console.warn('Notice updating stock/boxes in Supabase:', error.message);
-                        });
-                    }
+                    if (currentItem.id) changedItemIds.add(currentItem.id);
                 }
             }
+
+            // Update in Supabase database — once per item, with the final state after all its boxes are deducted
+            updatedItemsList.filter(i => changedItemIds.has(i.id)).forEach(i => {
+                supabase.from('menu_items').update({
+                    stock: i.stock,
+                    boxes: i.boxes,
+                    variations: i.variations,
+                    out_of_stock: i.out_of_stock
+                }).eq('id', i.id).then(({ error }) => {
+                    if (error) console.warn('Notice updating stock/boxes in Supabase:', error.message);
+                });
+            });
 
             setItems(updatedItemsList);
             safeSetCache('menuItems', updatedItemsList);
@@ -1448,11 +1456,13 @@ Thank you!`;
 
                                 <label style={{ fontWeight: 800, display: 'block', marginBottom: '10px', fontSize: '0.9rem', color: '#1e293b' }}>
                                     Available Boxes:
+                                    <span style={{ fontWeight: 600, fontSize: '0.78rem', color: '#64748b', marginLeft: '6px' }}>(pwedeng pumili ng higit sa isa)</span>
                                 </label>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
                                     {getItemBoxes(selectedProduct).map(b => {
                                         const isSold = Boolean(b.disabled || b.ordered);
-                                        const isSelected = (selectionOptions.box?.id === b.id || selectionOptions.box?.name === b.name) && !isSold;
+                                        const isSameBox = (x) => (b.id ? x.id === b.id : x.name === b.name);
+                                        const isSelected = selectionOptions.boxes.some(isSameBox) && !isSold;
                                         const computedBoxPrice = getBoxPrice(b, selectedProduct);
 
                                         return (
@@ -1461,7 +1471,13 @@ Thank you!`;
                                                 disabled={isSold}
                                                 type="button"
                                                 onClick={() => {
-                                                    if (!isSold) setSelectionOptions({ ...selectionOptions, box: b });
+                                                    if (isSold) return;
+                                                    setSelectionOptions({
+                                                        ...selectionOptions,
+                                                        boxes: isSelected
+                                                            ? selectionOptions.boxes.filter(x => !isSameBox(x))
+                                                            : [...selectionOptions.boxes, b]
+                                                    });
                                                 }}
                                                 style={{
                                                     padding: '12px 14px',
@@ -1477,7 +1493,7 @@ Thank you!`;
                                                 }}
                                             >
                                                 <div style={{ fontWeight: 800, fontSize: '0.92rem', color: isSold ? '#991b1b' : isSelected ? '#059669' : '#0f172a' }}>
-                                                    {b.name}
+                                                    {isSelected ? '✅ ' : ''}{b.name}
                                                 </div>
                                                 <div style={{ fontSize: '0.82rem', color: isSold ? '#7f1d1d' : '#475569', marginTop: '2px', fontWeight: 700 }}>
                                                     ⚖️ {b.weight} kg
@@ -1497,7 +1513,7 @@ Thank you!`;
                                 </div>
 
                                 {/* Selected Box Computation Summary Card */}
-                                {selectionOptions.box && (
+                                {selectionOptions.boxes.length > 0 && (
                                     <div style={{
                                         marginTop: '16px',
                                         background: 'linear-gradient(135deg, #071708 0%, #0c250d 100%)',
@@ -1508,39 +1524,39 @@ Thank you!`;
                                         boxShadow: '0 8px 20px rgba(0,0,0,0.12)'
                                     }}>
                                         <div style={{ fontSize: '0.78rem', color: '#F9B700', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 800, marginBottom: '8px' }}>
-                                            Selected Box Calculation:
+                                            Selected Box{selectionOptions.boxes.length > 1 ? `es (${selectionOptions.boxes.length})` : ''} Calculation:
                                         </div>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px', borderBottom: '1px dashed rgba(255,255,255,0.2)', paddingBottom: '10px' }}>
+                                        <div style={{ marginBottom: '10px', borderBottom: '1px dashed rgba(255,255,255,0.2)', paddingBottom: '10px' }}>
+                                            {selectionOptions.boxes.map(box => {
+                                                const isManual = box.priceManual && box.price !== undefined && box.price !== null && box.price !== '';
+                                                return (
+                                                    <div key={box.id || box.name} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '3px 0', fontSize: '0.85rem' }}>
+                                                        <span style={{ fontWeight: 700, color: '#ffffff' }}>
+                                                            {box.name}{' '}
+                                                            <span style={{ fontWeight: 600, color: '#94a3b8' }}>
+                                                                {isManual ? `${box.weight} kg` : `${box.weight} kg × ₱${getBoxPricePerKg(box, selectedProduct).toFixed(2)}`}
+                                                            </span>
+                                                        </span>
+                                                        <span style={{ fontWeight: 800, color: '#4ade80', whiteSpace: 'nowrap' }}>
+                                                            ₱{getBoxPrice(box, selectedProduct).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                                             <div>
-                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Selected Box</div>
-                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#ffffff' }}>{selectionOptions.box.name}</div>
-                                            </div>
-                                            <div>
-                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Weight</div>
-                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#ffffff' }}>{selectionOptions.box.weight} kg</div>
-                                            </div>
-                                            <div>
-                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Price per Kilo</div>
-                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#F9B700' }}>
-                                                    ₱{getBoxPricePerKg(selectionOptions.box, selectedProduct).toFixed(2)} / kg
+                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Total Weight</div>
+                                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#ffffff' }}>
+                                                    {Number(selectionOptions.boxes.reduce((sum, box) => sum + (Number(box.weight) || 0), 0).toFixed(3))} kg
                                                 </div>
                                             </div>
                                             <div>
                                                 <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Total Price</div>
                                                 <div style={{ fontWeight: 900, fontSize: '1.15rem', color: '#4ade80' }}>
-                                                    ₱{getBoxPrice(selectionOptions.box, selectedProduct).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    ₱{selectionOptions.boxes.reduce((sum, box) => sum + getBoxPrice(box, selectedProduct), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </div>
                                             </div>
-                                        </div>
-                                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', fontStyle: 'italic', textAlign: 'center' }}>
-                                            {(() => {
-                                                const box = selectionOptions.box;
-                                                const total = getBoxPrice(box, selectedProduct).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                                                if (box.priceManual && box.price !== undefined && box.price !== null && box.price !== '') {
-                                                    return `Price: ₱${total}`;
-                                                }
-                                                return `Calculation: ${box.weight} kg × ₱${getBoxPricePerKg(box, selectedProduct).toFixed(2)} = ₱${total}`;
-                                            })()}
                                         </div>
                                     </div>
                                 )}
@@ -1635,21 +1651,33 @@ Thank you!`;
                             </div>
                         )}
 
-                        <button className="btn-primary" style={{ width: '100%', padding: '16px', fontWeight: 800, fontSize: '1.1rem', borderRadius: '14px', background: 'var(--primary)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => addToCart(selectedProduct, selectionOptions)}>
-                            <Plus size={18} /> Add to Cart — ₱{(() => {
-                                const itemPricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
+                        {(() => {
+                            // If the item has boxes to pick from, at least one must be selected
+                            const needsBox = selectionOptions.boxes.length === 0 && getItemBoxes(selectedProduct).some(b => !b.disabled && !b.ordered);
+                            const itemPricePerKg = Number(selectedProduct.promo_price || selectedProduct.price);
+                            const addons = (selectionOptions.addons || []).reduce((sum, a) => sum + Number(a.price), 0);
+                            let total;
+                            if (selectionOptions.boxes.length > 0) {
+                                total = selectionOptions.boxes.reduce((sum, box) => sum + getBoxPrice(box, selectedProduct) + addons, 0);
+                            } else {
                                 let base = itemPricePerKg;
-                                if (selectionOptions.box) {
-                                    base = getBoxPrice(selectionOptions.box, selectedProduct);
-                                } else if (selectionOptions.variation && Number(selectionOptions.variation.price) > 0) {
+                                if (selectionOptions.variation && Number(selectionOptions.variation.price) > 0) {
                                     base = selectedProduct.name?.toLowerCase().includes('pork ribs')
                                         ? itemPricePerKg + Number(selectionOptions.variation.price)
                                         : Number(selectionOptions.variation.price);
                                 }
-                                const addons = (selectionOptions.addons || []).reduce((sum, a) => sum + Number(a.price), 0);
-                                return Number((base + addons).toFixed(2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                            })()}
-                        </button>
+                                total = base + addons;
+                            }
+                            return (
+                                <button className="btn-primary" disabled={needsBox} style={{ width: '100%', padding: '16px', fontWeight: 800, fontSize: '1.1rem', borderRadius: '14px', background: 'var(--primary)', color: 'white', border: 'none', cursor: needsBox ? 'not-allowed' : 'pointer', opacity: needsBox ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => addToCart(selectedProduct, selectionOptions)}>
+                                    {needsBox ? 'Pumili ng kahit isang box' : (
+                                        <>
+                                            <Plus size={18} /> Add to Cart{selectionOptions.boxes.length > 1 ? ` (${selectionOptions.boxes.length} boxes)` : ''} — ₱{Number(total.toFixed(2)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </>
+                                    )}
+                                </button>
+                            );
+                        })()}
                     </div>
                 </div>
             )}
