@@ -633,54 +633,70 @@ const Home = () => {
         }
     };
 
-    // Helper: Reliably copy text to clipboard (works on iOS & Android)
-    const copyToClipboard = async (text) => {
-        // Method 1: synchronous textarea copy. It runs inside the tap itself, so the browser
-        // still allows opening Messenger right after (an awaited copy can get the popup blocked).
-        if (copyWithTextarea(text)) return true;
+    // iPadOS reports itself as "Macintosh", so also check for touch support.
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-        // Method 2: Modern Clipboard API
+    // Starts the copy synchronously (inside the tap) and returns a promise of whether it worked.
+    // Nothing is awaited before the copy starts, so the caller can still open Messenger right
+    // after in the same tap — iOS Safari blocks both clipboard writes and popups once the tap
+    // has "ended" (e.g. after an await).
+    const startCopy = (text) => {
+        // Method 1: synchronous textarea copy (works in Safari, Facebook/Messenger in-app browsers)
+        if (copyWithTextarea(text)) return Promise.resolve(true);
+
+        // Method 2: Modern Clipboard API — called now, awaited later
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            try {
-                await navigator.clipboard.writeText(text);
-                return true;
-            } catch (err) {
+            return navigator.clipboard.writeText(text).then(() => true, (err) => {
                 console.warn('Clipboard API failed:', err);
-            }
+                return false;
+            });
         }
-        return false;
+        return Promise.resolve(false);
     };
 
+    // Helper: Reliably copy text to clipboard (works on iOS & Android)
+    const copyToClipboard = (text) => startCopy(text);
+
     const copyWithTextarea = (text) => {
+        const textarea = document.createElement('textarea');
         try {
-            const textarea = document.createElement('textarea');
             textarea.value = text;
-            textarea.setAttribute('readonly', '');
-            textarea.style.position = 'fixed';
-            textarea.style.left = '-9999px';
-            textarea.style.top = '-9999px';
+            // iOS only copies from an editable, on-screen element; 16px font stops the zoom-in.
+            textarea.style.position = 'absolute';
+            textarea.style.top = `${window.pageYOffset || document.documentElement.scrollTop}px`;
+            textarea.style.left = '0';
+            textarea.style.width = '1px';
+            textarea.style.height = '1px';
+            textarea.style.padding = '0';
+            textarea.style.border = 'none';
             textarea.style.opacity = '0';
+            textarea.style.fontSize = '16px';
             document.body.appendChild(textarea);
 
-            // iOS needs special selection handling
-            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
             if (isIOS) {
+                textarea.contentEditable = 'true';
+                textarea.readOnly = false;
                 const range = document.createRange();
                 range.selectNodeContents(textarea);
                 const selection = window.getSelection();
                 selection.removeAllRanges();
                 selection.addRange(range);
-                textarea.setSelectionRange(0, 999999);
+                textarea.setSelectionRange(0, text.length);
             } else {
+                textarea.setAttribute('readonly', '');
                 textarea.select();
             }
 
             const ok = document.execCommand('copy');
-            document.body.removeChild(textarea);
+            window.getSelection()?.removeAllRanges();
+            textarea.blur();
             return ok;
         } catch (err) {
             console.warn('Textarea copy failed:', err);
             return false;
+        } finally {
+            if (textarea.parentNode) textarea.parentNode.removeChild(textarea);
         }
     };
 
@@ -696,17 +712,25 @@ const Home = () => {
         return Boolean(win);
     };
 
-    // Receipt panel shown after sending: { message, copied, lalamoveReminder }
+    // Receipt panel shown after placing the order: { message, lalamoveReminder }
     const [sentOrder, setSentOrder] = useState(null);
     const [receiptCopied, setReceiptCopied] = useState(false);
 
-    const handleOpenMessengerAgain = async () => {
-        const ok = await copyToClipboard(sentOrder.message);
-        setReceiptCopied(ok);
+    const handleSendToMessenger = async () => {
+        // Copy again (in case the first copy failed) and open Messenger in the same tap;
+        // only await afterwards.
+        const copying = startCopy(sentOrder.message);
         if (!openMessenger(sentOrder.message)) {
             // Popup blocked: go to Messenger in this tab instead.
             window.location.href = `https://m.me/${MESSENGER_PAGE_ID}?text=${encodeURIComponent(sentOrder.message)}`;
         }
+        setReceiptCopied(await copying);
+    };
+
+    const handleCopyReceipt = async () => {
+        const ok = await startCopy(sentOrder.message);
+        setReceiptCopied(ok);
+        if (!ok) alert('Could not copy automatically. Press and hold the order text below, tap "Select All", then "Copy".');
     };
 
     const handlePlaceOrder = async () => {
@@ -766,17 +790,16 @@ ${amountBreakdown}
 
 Thank you!`;
 
-        // Copy the full order and open Messenger right away, while the browser still treats this
-        // as part of the customer's tap (otherwise copying or opening Messenger can be blocked).
-        const copied = await copyToClipboard(message);
-        const opened = openMessenger(message);
+        // Step 1: copy the receipt only. Messenger is opened by a separate tap on the receipt panel,
+        // so iOS never has to allow the copy and the new tab from the same tap.
+        const copied = await startCopy(message);
 
         const lalamoveReminder = orderType.includes('lalamove')
             ? 'Lalamove Delivery: the store will confirm your order first, then tell you the Lalamove delivery charge before booking.'
             : '';
         setIsCheckoutOpen(false);
         setReceiptCopied(copied);
-        setSentOrder({ message, copied, opened, lalamoveReminder });
+        setSentOrder({ message, lalamoveReminder });
 
         const newOrder = {
             order_type: orderType,
@@ -1957,10 +1980,10 @@ Thank you!`;
                                     boxShadow: '0 6px 18px rgba(0, 132, 255, 0.3)'
                                 }}
                             >
-                                <MessageSquare size={22} /> Send Order via Messenger
+                                <Copy size={22} /> Copy Order Receipt
                             </button>
                             <p style={{ margin: '10px 0 0', fontSize: '0.78rem', color: '#64748b', textAlign: 'center' }}>
-                                Your full order is copied automatically and Messenger opens — just paste it in the message box and tap Send.
+                                Step 1: copy your order receipt. Step 2: send it to us on Messenger.
                             </p>
                             </>)}
                         </div>
@@ -1969,7 +1992,7 @@ Thank you!`;
                 </div>
             )}
 
-            {/* Order receipt panel: stays open behind Messenger so the customer can copy / resend it */}
+            {/* Order receipt panel: step 1 copy the receipt, step 2 open Messenger (separate taps for iOS) */}
             {sentOrder && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
                     <div style={{ background: 'white', borderRadius: '20px', width: '100%', maxWidth: '480px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
@@ -1978,22 +2001,25 @@ Thank you!`;
                             <div style={{ flex: 1 }}>
                                 <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Almost done — send it on Messenger</h3>
                                 <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: '#475569' }}>
-                                    {receiptCopied ? 'Your full order details are copied.' : 'Copy your order details below.'}
+                                    {receiptCopied ? '✓ Your order receipt is copied.' : 'Tap "Copy Order Receipt" below first.'}
                                 </p>
                             </div>
                             <button onClick={() => setSentOrder(null)} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}><X size={22} /></button>
                         </div>
 
                         <ol style={{ margin: '0 20px 12px', padding: '12px 12px 12px 32px', background: '#eff6ff', borderRadius: '12px', fontSize: '0.88rem', color: '#1e3a8a', lineHeight: 1.6 }}>
-                            <li>Open the store's chat in Messenger{sentOrder.opened ? ' (it opened in a new tab)' : ''}.</li>
-                            <li>If the message box is empty, <b>press and hold</b> it and tap <b>Paste</b>.</li>
-                            <li>Tap <b>Send</b>.</li>
+                            <li><b>Copy</b> your order receipt{receiptCopied ? ' ✓' : ''}.</li>
+                            <li>Tap <b>Send via Messenger</b> to open our chat.</li>
+                            <li>If the message box is empty, <b>press and hold</b> it and tap <b>Paste</b>, then tap <b>Send</b>.</li>
                         </ol>
 
+                        {/* Not readOnly: iOS won't show the Select All / Copy menu reliably on read-only fields.
+                            inputMode="none" keeps the keyboard from popping up; edits are ignored. */}
                         <textarea
-                            readOnly
                             value={sentOrder.message}
-                            onFocus={(e) => e.target.select()}
+                            onChange={() => {}}
+                            inputMode="none"
+                            onFocus={(e) => e.target.setSelectionRange(0, e.target.value.length)}
                             style={{ margin: '0 20px', flex: 1, minHeight: '160px', resize: 'none', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', fontFamily: 'inherit', fontSize: '0.85rem', color: '#0f172a', background: '#f8fafc' }}
                         />
 
@@ -2006,10 +2032,17 @@ Thank you!`;
                         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             <button
                                 type="button"
-                                onClick={handleOpenMessengerAgain}
+                                onClick={handleCopyReceipt}
+                                style={{ width: '100%', padding: '14px', borderRadius: '14px', border: `2px solid ${receiptCopied ? '#16a34a' : '#0084ff'}`, background: 'white', color: receiptCopied ? '#16a34a' : '#0084ff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}
+                            >
+                                {receiptCopied ? <><CheckCircle size={20} /> Copied — Copy Again</> : <><Copy size={20} /> Copy Order Receipt</>}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendToMessenger}
                                 style={{ width: '100%', padding: '15px', borderRadius: '14px', border: 'none', background: 'linear-gradient(135deg, #0084ff 0%, #a334fa 100%)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontWeight: 800, fontSize: '1rem', cursor: 'pointer' }}
                             >
-                                <MessageSquare size={20} /> {sentOrder.opened ? 'Open Messenger Again' : 'Open Messenger'}
+                                <MessageSquare size={20} /> Send via Messenger
                             </button>
                         </div>
                     </div>
