@@ -60,6 +60,37 @@ body {
   gap: 12px;
 }
 
+.header-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border-radius: 999px;
+  padding: 0 12px;
+}
+.header-search-icon { color: #94a3b8; flex-shrink: 0; }
+.header-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 10px 4px;
+  font-size: 0.95rem;
+}
+.header-search button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  display: flex;
+  padding: 4px;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -570,6 +601,8 @@ body {
   .brand-sub { font-size: 0.65rem; opacity: 0.8; letter-spacing: 0.5px; }
 
   .header-nav { gap: 8px; }
+  .header-search { padding: 0 8px; }
+  .header-search input { padding: 7px 2px; font-size: 0.85rem; }
   .btn-accent { padding: 8px 14px; font-size: 0.78rem; border-radius: 999px; }
 
   /* Category bar */

@@ -1049,6 +1049,8 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
         weight: b.weight ?? 15.00,
         stockQty: b.stockQty !== undefined ? b.stockQty : 1,
         pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
+        priceMode: b.priceMode === 'pc' ? 'pc' : 'kg',
+        pricePerPc: b.pricePerPc !== undefined ? b.pricePerPc : '',
         price: b.price !== undefined ? b.price : '',
         priceManual: Boolean(b.priceManual),
         disabled: Boolean(b.disabled || b.ordered)
@@ -1117,6 +1119,8 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
         weight: b.weight ?? 15.00,
         stockQty: b.stockQty !== undefined ? b.stockQty : 1,
         pricePerKg: b.pricePerKg !== undefined ? b.pricePerKg : '',
+        priceMode: b.priceMode === 'pc' ? 'pc' : 'kg',
+        pricePerPc: b.pricePerPc !== undefined ? b.pricePerPc : '',
         price: b.price !== undefined ? b.price : '',
         priceManual: Boolean(b.priceManual),
         disabled: Boolean(b.disabled || b.ordered)
@@ -1186,6 +1190,8 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
       generatedBoxes = editableBoxes.map((b, i) => {
         const weight = parseFloat(b.weight) || 0;
         const pricePerKg = toNumberOrBlank(b.pricePerKg);
+        const priceMode = b.priceMode === 'pc' ? 'pc' : 'kg';
+        const pricePerPc = toNumberOrBlank(b.pricePerPc);
         // Total follows weight × price per kg unless the admin typed their own total
         const priceManual = Boolean(b.priceManual) && b.price !== '' && b.price !== undefined && b.price !== null;
         return {
@@ -1194,7 +1200,13 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
           weight,
           stockQty: b.stockQty !== undefined && b.stockQty !== '' ? (parseInt(b.stockQty, 10) || 0) : 1,
           pricePerKg,
-          price: priceManual ? toNumberOrBlank(b.price) : Number((weight * (pricePerKg !== '' ? pricePerKg : finalPrice)).toFixed(2)),
+          priceMode,
+          pricePerPc,
+          price: priceManual
+            ? toNumberOrBlank(b.price)
+            : (priceMode === 'pc'
+              ? Number((pricePerPc !== '' ? pricePerPc : finalPrice).toFixed(2))
+              : Number((weight * (pricePerKg !== '' ? pricePerKg : finalPrice)).toFixed(2))),
           priceManual,
           disabled: Boolean(b.disabled),
           ordered: Boolean(b.ordered || false) // Keep ordered separate from disabled
@@ -1434,6 +1446,9 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                       if (b.priceManual && b.price !== undefined && b.price !== null && b.price !== '') {
                         return sum + Number(b.price);
                       }
+                      if (b.priceMode === 'pc') {
+                        return sum + (b.pricePerPc !== undefined && b.pricePerPc !== '' ? parseFloat(b.pricePerPc) : unitPrice);
+                      }
                       const boxPKg = b.pricePerKg !== undefined && b.pricePerKg !== '' ? parseFloat(b.pricePerKg) : unitPrice;
                       return sum + ((parseFloat(b.weight) || 0) * boxPKg);
                     }, 0);
@@ -1502,7 +1517,9 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
                     {editableBoxes.map((b, idx) => {
                       const unitPrice = parseFloat(formData.price || 0);
                       const boxPKg = b.pricePerKg !== undefined && b.pricePerKg !== '' ? parseFloat(b.pricePerKg) : unitPrice;
-                      const computedPrice = ((parseFloat(b.weight) || 0) * boxPKg).toFixed(2);
+                      const isPc = b.priceMode === 'pc';
+                      const pcPrice = b.pricePerPc !== undefined && b.pricePerPc !== '' ? parseFloat(b.pricePerPc) : unitPrice;
+                      const computedPrice = isPc ? (pcPrice || 0).toFixed(2) : ((parseFloat(b.weight) || 0) * boxPKg).toFixed(2);
                       const displayPrice = b.priceManual ? b.price : computedPrice;
 
                       return (
@@ -1536,15 +1553,26 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
 
                           {/* Editable Price Per Kg Field */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0284c7' }}>₱/kg:</span>
+                            <select
+                              value={isPc ? 'pc' : 'kg'}
+                              onChange={(e) => {
+                                handleUpdateBox(idx, 'priceMode', e.target.value);
+                                handleUpdateBox(idx, 'priceManual', false);
+                              }}
+                              title="Price per kilo (weight x price) or flat price per piece (not multiplied)"
+                              style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0284c7', border: '1px solid #bae6fd', borderRadius: '6px', background: '#f0f9ff', padding: '5px 4px' }}
+                            >
+                              <option value="kg">₱/kg</option>
+                              <option value="pc">₱/pc</option>
+                            </select>
                             <input
                               type="text"
                               inputMode="decimal"
                               className="form-input-styled"
-                              value={b.pricePerKg !== undefined ? b.pricePerKg : ''}
+                              value={isPc ? (b.pricePerPc !== undefined ? b.pricePerPc : '') : (b.pricePerKg !== undefined ? b.pricePerKg : '')}
                               onChange={(e) => {
-                                handleUpdateBox(idx, 'pricePerKg', cleanDecimal(e.target.value));
-                                // A new price per kilo brings the total back to automatic
+                                handleUpdateBox(idx, isPc ? 'pricePerPc' : 'pricePerKg', cleanDecimal(e.target.value));
+                                // A new price brings the total back to automatic
                                 handleUpdateBox(idx, 'priceManual', false);
                               }}
                               placeholder={unitPrice.toString()}

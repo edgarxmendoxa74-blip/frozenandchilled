@@ -21,7 +21,8 @@ import {
     ChevronLeft,
     ChevronRight,
     Truck,
-    CheckCircle
+    CheckCircle,
+    Search
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { categories as initialCategories, menuItems } from '../data/MenuData';
@@ -396,9 +397,24 @@ const Home = () => {
             : Number(item.promo_price || item.price)
     );
 
+    // Helper: flat price of a box sold per piece (not multiplied by weight)
+    const getBoxPricePerPc = (box, item) => (
+        (box.pricePerPc !== undefined && box.pricePerPc !== null && box.pricePerPc !== '')
+            ? Number(box.pricePerPc)
+            : Number(item.promo_price || item.price)
+    );
+
+    // Helper: short text for receipts, e.g. "Box 1 (12 kg @ ₱280/kg = ₱3,360)" or "Sack 1 (1 pc @ ₱1,250 = ₱1,250)"
+    const describeBox = (cartItem) => {
+        const b = cartItem.selectedBox;
+        if (b.priceMode === 'pc') return `${b.name} (1 pc @ ₱${getBoxPricePerPc(b, cartItem).toLocaleString()} = ₱${cartItem.finalPrice.toLocaleString()})`;
+        return `${b.name} (${b.weight} kg @ ₱${cartItem.pricePerKg}/kg = ₱${cartItem.finalPrice.toLocaleString()})`;
+    };
+
     // Helper: a box's total — weight × price per kilo, unless the admin typed a custom total
     const getBoxPrice = (box, item) => {
         if (box.priceManual && box.price !== undefined && box.price !== null && box.price !== '') return Number(box.price);
+        if (box.priceMode === 'pc') return Number(getBoxPricePerPc(box, item).toFixed(2));
         return Number(((Number(box.weight) || 0) * getBoxPricePerKg(box, item)).toFixed(2));
     };
 
@@ -617,7 +633,7 @@ const Home = () => {
         const itemDetails = cart.map(item => {
             let d = `${item.name} (x${item.quantity})`;
             if (item.selectedBox) {
-                d += ` - ${item.selectedBox.name} (${item.selectedBox.weight} kg @ ₱${item.pricePerKg}/kg = ₱${item.finalPrice.toLocaleString()})`;
+                d += ` - ${describeBox(item)}`;
             } else if (item.selectedVariation) {
                 d += ` - ${item.selectedVariation.name}`;
             }
@@ -770,7 +786,7 @@ const Home = () => {
         const itemDetails = cart.map(item => {
             let d = `${item.name} (x${item.quantity})`;
             if (item.selectedBox) {
-                d += ` - ${item.selectedBox.name} (${item.selectedBox.weight} kg @ ₱${item.pricePerKg}/kg = ₱${item.finalPrice.toLocaleString()})`;
+                d += ` - ${describeBox(item)}`;
             } else if (item.selectedVariation) {
                 d += ` - ${item.selectedVariation.name}`;
             }
@@ -938,6 +954,21 @@ Thank you!`;
                     <Link to="/" className="brand">
                         <img src="/logo.png" alt="Chilled and Frozen Hub" style={{ height: '54px', objectFit: 'contain' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                     </Link>
+                    <div className="header-search">
+                        <Search size={16} className="header-search-icon" />
+                        <input
+                            type="text"
+                            placeholder="Search products..."
+                            aria-label="Search products"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                        {searchTerm && (
+                            <button type="button" aria-label="Clear search" onClick={() => setSearchTerm('')}>
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
                     <div className="header-nav">
                         <button className="btn-accent" onClick={() => setIsCartOpen(true)}>
                             <ShoppingBag size={16} />
@@ -1035,24 +1066,6 @@ Thank you!`;
                         <button onClick={prevBanner} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: '50%', padding: '10px', cursor: 'pointer', zIndex: 10 }}><ChevronLeft size={24} color="var(--primary)" /></button>
                         <button onClick={nextBanner} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: '50%', padding: '10px', cursor: 'pointer', zIndex: 10 }}><ChevronRight size={24} color="var(--primary)" /></button>
                     </div>
-                </div>
-                
-                {/* Search Bar */}
-                <div className="container" style={{ marginTop: '20px', padding: '0 15px' }}>
-                     <div className="search-bar" style={{ display: 'flex', gap: '10px', maxWidth: '600px', margin: '0 auto', background: 'white', padding: '6px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
-                         <input 
-                             type="text" 
-                             placeholder="Search products..." 
-                             value={searchTerm}
-                             onChange={(e) => setSearchTerm(e.target.value)}
-                             style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: 'none', outline: 'none', fontSize: '1rem' }}
-                         />
-                         {searchTerm && (
-                             <button onClick={() => setSearchTerm('')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 10px', color: '#94a3b8' }}>
-                                 <X size={18} />
-                             </button>
-                         )}
-                     </div>
                 </div>
             </section>
 
@@ -1526,7 +1539,7 @@ Thank you!`;
                                                         <span style={{ fontWeight: 700, color: '#ffffff' }}>
                                                             {box.name}{' '}
                                                             <span style={{ fontWeight: 600, color: '#94a3b8' }}>
-                                                                {isManual ? `${box.weight} kg` : `${box.weight} kg × ₱${getBoxPricePerKg(box, selectedProduct).toFixed(2)}`}
+                                                                {isManual ? `${box.weight} kg` : (box.priceMode === 'pc' ? '1 pc' : `${box.weight} kg × ₱${getBoxPricePerKg(box, selectedProduct).toFixed(2)}`)}
                                                             </span>
                                                         </span>
                                                         <span style={{ fontWeight: 800, color: '#4ade80', whiteSpace: 'nowrap' }}>
@@ -2103,7 +2116,7 @@ Thank you!`;
                                 <div style={{ flex: 1 }}>
                                     <h4 style={{ margin: 0 }}>{item.name}</h4>
                                     <p style={{ margin: '2px 0 5px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                        {item.selectedBox ? `📦 ${item.selectedBox.name} (${item.selectedBox.weight} kg @ ₱${item.pricePerKg}/kg)` : (item.selectedVariation?.name || '')}
+                                        {item.selectedBox ? `📦 ${item.selectedBox.priceMode === 'pc' ? `${item.selectedBox.name} (1 pc @ ₱${getBoxPricePerPc(item.selectedBox, item).toLocaleString()})` : `${item.selectedBox.name} (${item.selectedBox.weight} kg @ ₱${item.pricePerKg}/kg)`}` : (item.selectedVariation?.name || '')}
                                         {item.selectedFlavors && item.selectedFlavors.length > 0 ? ` | ${item.selectedFlavors.join(', ')}` : ''}
                                     </p>
                                     <span style={{ fontWeight: 800, color: 'var(--primary)' }}>₱{Number(item.finalPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
