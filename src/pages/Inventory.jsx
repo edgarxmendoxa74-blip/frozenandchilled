@@ -742,7 +742,7 @@ const Inventory = () => {
               className={`filter-chip chip-ok ${activeFilter === 'OK' ? 'active' : ''}`}
               onClick={() => setActiveFilter('OK')}
             >
-              🟢 OK ({stats.ok})
+              🟢 Full Stock ({stats.ok})
             </button>
 
           </div>
@@ -826,7 +826,7 @@ const Inventory = () => {
                         <div className="price-text">₱{Number(item.price).toFixed(2)}</div>
                       </div>
                       <span className={`status-badge ${statusType}`}>
-                        {statusType === 'ok' && (getItemBoxes(item).filter(b => !b.disabled && !b.ordered).length >= 6 ? '🟢 Full Stock' : '🟢 OK')}
+                        {statusType === 'ok' && '🟢 Full Stock'}
                         {statusType === 'paubos' && '🟡 Low Stock'}
                         {statusType === 'ubos' && '🔴 Out of Stock'}
                       </span>
@@ -976,7 +976,7 @@ const Inventory = () => {
                       <td style={{ fontWeight: 700, color: '#64748b' }}>{threshold} {item.unit || 'kg'}</td>
                       <td>
                         <span className={`status-badge ${statusType}`}>
-                          {statusType === 'ok' && (availableBoxes.length >= 6 ? '🟢 Full Stock' : '🟢 OK')}
+                          {statusType === 'ok' && '🟢 Full Stock'}
                           {statusType === 'paubos' && '🟡 Low Stock'}
                           {statusType === 'ubos' && '🔴 Out of Stock'}
                         </span>
