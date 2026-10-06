@@ -12,12 +12,7 @@ const ProtectedRoute = ({ children }) => {
 
     const { currentUser } = authContext;
 
-    // Allow access if:
-    // 1. currentUser exists from Supabase auth, OR
-    // 2. Test user is set in localStorage (dev only)
-    const testUser = localStorage.getItem('admin_test_user') === 'true';
-    
-    if (!currentUser && !testUser) {
+    if (!currentUser) {
         console.log('ProtectedRoute: No user, redirecting to login');
         return <Navigate to="/admin" />;
     }

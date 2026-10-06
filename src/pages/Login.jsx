@@ -40,18 +40,6 @@ const Login = () => {
             return;
         }
 
-        // DEVELOPMENT ONLY: Test admin account for local testing
-        if (trimmedEmail === 'admin@chilledandfrozenhub.com' && password === 'admin123') {
-            console.log('✅ Development test admin login');
-            localStorage.setItem('admin_test_user', 'true');
-            localStorage.setItem('admin_test_email', trimmedEmail);
-            if (rememberMe) {
-                localStorage.setItem('rememberEmail', trimmedEmail);
-            }
-            navigate('/admin/dashboard');
-            return;
-        }
-
         try {
             const { data, error: loginError } = await supabase.auth.signInWithPassword({
                 email: trimmedEmail,
@@ -61,7 +49,7 @@ const Login = () => {
             if (loginError) {
                 console.error('Login error:', loginError);
                 if (loginError.message?.includes('Invalid login credentials')) {
-                    setError('Invalid email or password. (Test: admin@chilledandfrozenhub.com / admin123)');
+                    setError('Invalid email or password.');
                 } else {
                     setError(loginError.message || 'Login failed. Please try again.');
                 }

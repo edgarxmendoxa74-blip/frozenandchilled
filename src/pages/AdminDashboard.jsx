@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { safeSetCache } from '../storageCache';
+import { uploadImage } from '../imageUpload';
 import {
     LayoutDashboard,
     LogOut,
@@ -825,12 +826,15 @@ const AdminDashboard = () => {
                             <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Product Image</label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                                 {editingItem.image && <img src={editingItem.image} style={{ width: '70px', height: '70px', borderRadius: '10px', objectFit: 'cover' }} alt="" />}
-                                <input type="file" accept="image/*" onChange={(e) => {
+                                <input type="file" accept="image/*" onChange={async (e) => {
                                     const file = e.target.files[0];
-                                    if (file) {
-                                        const reader = new FileReader();
-                                        reader.onloadend = () => setEditingItem({ ...editingItem, image: reader.result });
-                                        reader.readAsDataURL(file);
+                                    if (!file) return;
+                                    try {
+                                        const url = await uploadImage(file, 'products');
+                                        setEditingItem(prev => ({ ...prev, image: url }));
+                                    } catch (err) {
+                                        console.error(err);
+                                        showMessage('Image upload failed (check the "products" storage bucket exists and is public)');
                                     }
                                 }} style={inputStyle} />
                             </div>
@@ -1767,52 +1771,16 @@ const AdminDashboard = () => {
             setIsUploadingQR(true);
             setUploadStatus('Reading image');
 
-            // Step 1: Convert to base64 immediately (always works, no network needed)
-            const toBase64 = (f) => new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = () => reject(new Error('Failed to read file'));
-                reader.readAsDataURL(f);
-            });
-
-            let base64Value = '';
             try {
-                base64Value = await toBase64(file);
-            } catch {
+                const url = await uploadImage(file, 'qr-codes', { maxSize: 700, quality: 0.9 });
+                setFormData(prev => ({ ...prev, qr_url: url }));
+                setUploadStatus('QR uploaded to cloud storage!');
+            } catch (err) {
+                console.error(err);
+                setUploadStatus('Upload failed. Check the "products" storage bucket exists and is public.');
+            } finally {
                 setIsUploadingQR(false);
-                setUploadStatus(' Error reading image file.');
-                return;
             }
-
-            // Set base64 immediately  this is the guaranteed fallback
-            setFormData(prev => ({ ...prev, qr_url: base64Value }));
-            setUploadStatus(' QR ready. Trying cloud upload');
-
-            // Step 2: Try Supabase Storage for a proper public URL
-            try {
-                const fileExt = (file.name.split('.').pop() || 'png').toLowerCase();
-                const fileName = `qr_${Date.now()}.${fileExt}`;
-                const filePath = `qr-codes/${fileName}`;
-
-                const { error: uploadError } = await supabase.storage
-                    .from('products')
-                    .upload(filePath, file, { upsert: true });
-
-                if (!uploadError) {
-                    const { data: urlData } = supabase.storage.from('products').getPublicUrl(filePath);
-                    if (urlData?.publicUrl) {
-                        setFormData(prev => ({ ...prev, qr_url: urlData.publicUrl }));
-                        setUploadStatus(' QR uploaded to cloud storage!');
-                        setIsUploadingQR(false);
-                        return;
-                    }
-                }
-            } catch {
-                // Storage not configured  base64 already saved above, that's fine
-            }
-
-            setUploadStatus(' QR code ready (stored as image data).');
-            setIsUploadingQR(false);
         };
 
         const handleSaveMethod = async (e) => {
@@ -2160,32 +2128,11 @@ const AdminDashboard = () => {
             if (!file) return;
             setIsUploading(true);
             try {
-                const fileExt = file.name.split('.').pop();
-                const fileName = `banner_${Date.now()}.${fileExt}`;
-                const filePath = `banners/${fileName}`;
-
-                const { error: uploadError } = await supabase.storage
-                    .from('products')
-                    .upload(filePath, file);
-
-                if (uploadError) {
-                    // Fallback to data URL if Supabase bucket isn't public/configured
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        setIsUploading(false);
-                        saveBanners([...banners, reader.result], ' Hero banner image uploaded!');
-                    };
-                    reader.readAsDataURL(file);
-                    return;
-                }
-
-                const { data } = supabase.storage.from('products').getPublicUrl(filePath);
-                if (data?.publicUrl) {
-                    await saveBanners([...banners, data.publicUrl], ' Hero banner image uploaded to Supabase!');
-                }
+                const publicUrl = await uploadImage(file, 'banners', { maxSize: 1600, quality: 0.8 });
+                await saveBanners([...banners, publicUrl], ' Hero banner image uploaded to Supabase!');
             } catch (err) {
                 console.error(err);
-                showMessage('Error uploading banner image');
+                showMessage('Error uploading banner image (check the "products" storage bucket exists and is public)');
             } finally {
                 setIsUploading(false);
             }

@@ -26,6 +26,7 @@ import {
 import { Link } from 'react-router-dom';
 import { categories as initialCategories, menuItems } from '../data/MenuData';
 import { supabase } from '../supabaseClient';
+import { optimizeImage } from '../imageUpload';
 import { safeSetCache } from '../storageCache';
 import { recordStoreVisit, markVisitOrdered } from '../visitTracking';
 
@@ -329,14 +330,9 @@ const Home = () => {
             clearTimeout(reloadTimer);
             reloadTimer = setTimeout(() => fetchData(true), 300);
         };
-        const handleVisibility = () => {
-            if (document.visibilityState === 'visible') handleReload();
-        };
 
         window.addEventListener('storage', handleReload);
         window.addEventListener('store_data_updated', handleReload);
-        window.addEventListener('focus', handleReload);
-        document.addEventListener('visibilitychange', handleVisibility);
 
         // Live updates: admin edits in the database are pushed to open menus on any device.
         // Requires realtime to be enabled for these tables (see enable_realtime.sql).
@@ -350,19 +346,11 @@ const Home = () => {
             .on('postgres_changes', { event: '*', schema: 'public', table: 'order_types' }, handleReload)
             .subscribe();
 
-        // Fallback in case realtime is not enabled: re-check while the page is visible.
-        const pollTimer = setInterval(() => {
-            if (document.visibilityState === 'visible') fetchData(true);
-        }, 30000);
-
         return () => {
             clearTimeout(reloadTimer);
-            clearInterval(pollTimer);
             supabase.removeChannel(channel);
             window.removeEventListener('storage', handleReload);
             window.removeEventListener('store_data_updated', handleReload);
-            window.removeEventListener('focus', handleReload);
-            document.removeEventListener('visibilitychange', handleVisibility);
         };
     }, []);
 
@@ -1150,9 +1138,11 @@ Thank you!`;
                                                     {/* Product Thumbnail */}
                                                     <div className="menu-item-list-img-wrapper">
                                                         <img
-                                                            src={item.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'}
+                                                            src={optimizeImage(item.image, 400) || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'}
                                                             alt={item.name}
                                                             className="menu-item-list-img"
+                                                            loading="lazy"
+                                                            decoding="async"
                                                             onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'; }}
                                                         />
                                                     </div>
@@ -1300,9 +1290,11 @@ Thank you!`;
                                                     {/* Product Thumbnail */}
                                                     <div className="menu-item-list-img-wrapper">
                                                         <img
-                                                            src={item.image || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'}
+                                                            src={optimizeImage(item.image, 400) || 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'}
                                                             alt={item.name}
                                                             className="menu-item-list-img"
+                                                            loading="lazy"
+                                                            decoding="async"
                                                             onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=200&q=80'; }}
                                                         />
                                                     </div>

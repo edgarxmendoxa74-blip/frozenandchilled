@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { uploadImage } from '../imageUpload';
 import { safeSetCache } from '../storageCache';
 import { categories as initialCategories, menuItems as initialItems } from '../data/MenuData';
 import './Inventory.css';
@@ -1096,33 +1097,10 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
     setIsUploadingImage(true);
     setImageStatus('Uploading image...');
     try {
-      const blob = await resizeImage(file);
-      const filePath = `products/product_${Date.now()}.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from('products')
-        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
-
-      if (!uploadError) {
-        const { data } = supabase.storage.from('products').getPublicUrl(filePath);
-        if (data?.publicUrl) {
-          setFormData(prev => ({ ...prev, image: data.publicUrl }));
-          setImagePreview(data.publicUrl);
-          setImageStatus('✅ Image uploaded. Click Save to apply it.');
-          return;
-        }
-      }
-
-      // Storage bucket not available: store the resized image inside the product instead.
-      console.warn('Storage upload failed, using embedded image:', uploadError);
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-      setFormData(prev => ({ ...prev, image: dataUrl }));
-      setImagePreview(dataUrl);
-      setImageStatus('✅ Image ready (saved with the product). Click Save to apply it.');
+      const publicUrl = await uploadImage(file, 'products');
+      setFormData(prev => ({ ...prev, image: publicUrl }));
+      setImagePreview(publicUrl);
+      setImageStatus('✅ Image uploaded. Click Save to apply it.');
     } catch (err) {
       console.error('Image upload error:', err);
       setImageStatus(`❌ Could not upload image: ${err.message}`);

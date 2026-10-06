@@ -17,12 +17,9 @@ if (!supabaseAnonKey) {
     throw new Error('❌ SUPABASE CONFIGURATION ERROR: Missing VITE_SUPABASE_ANON_KEY. Check your .env file!');
 }
 
-if (!supabaseAnonKey.startsWith('eyJ')) {
-    throw new Error('❌ INVALID SUPABASE KEY: Supabase anon keys should start with "eyJ" (JWT format). Current key starts with: ' + supabaseAnonKey.substring(0, 10));
-}
-
-if (supabaseAnonKey.length < 100) {
-    throw new Error('❌ INVALID SUPABASE KEY: Key appears too short (should be 500+ chars). Current length: ' + supabaseAnonKey.length);
+// Accept both the legacy JWT anon key ("eyJ...") and the new publishable key ("sb_publishable_...").
+if (!supabaseAnonKey.startsWith('eyJ') && !supabaseAnonKey.startsWith('sb_publishable_')) {
+    throw new Error('❌ INVALID SUPABASE KEY: use the anon (eyJ...) or publishable (sb_publishable_...) key, never the secret/service key.');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
