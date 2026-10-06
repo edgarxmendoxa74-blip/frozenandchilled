@@ -308,12 +308,12 @@ const Inventory = () => {
     ok: items.filter(i => {
       const s = localStockState[i.id]?.stock ?? i.stock ?? 0;
       const th = i.low_stock_threshold || 5;
-      return s > th;
+      return !i.out_of_stock && s > th;
     }).length,
     low: items.filter(i => {
       const s = localStockState[i.id]?.stock ?? i.stock ?? 0;
       const th = i.low_stock_threshold || 5;
-      return s > 0 && s <= th;
+      return !i.out_of_stock && s > 0 && s <= th;
     }).length,
     out: items.filter(i => {
       const s = localStockState[i.id]?.stock ?? i.stock ?? 0;
@@ -334,9 +334,9 @@ const Inventory = () => {
 
       let matchesFilter = true;
       if (activeFilter === 'OK') {
-        matchesFilter = currentStock > threshold;
+        matchesFilter = !item.out_of_stock && currentStock > threshold;
       } else if (activeFilter === 'Paubos') {
-        matchesFilter = currentStock > 0 && currentStock <= threshold;
+        matchesFilter = !item.out_of_stock && currentStock > 0 && currentStock <= threshold;
       } else if (activeFilter === 'Ubos') {
         matchesFilter = currentStock === 0 || item.out_of_stock;
       }
