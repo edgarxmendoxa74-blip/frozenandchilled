@@ -1221,7 +1221,8 @@ const BatchModal = ({ item, categories, onSave, onClose }) => {
       stock: finalStock,
       boxes: generatedBoxes,
       low_stock_threshold: parseFloat(formData.low_stock_threshold) || 5,
-      out_of_stock: Boolean(formData.out_of_stock || finalStock === 0),
+      // Derived from the stock being saved; the old flag must not stick once stock is added back.
+      out_of_stock: finalStock <= 0,
       description: formData.description || ''
     });
   };
