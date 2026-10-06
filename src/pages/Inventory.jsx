@@ -826,7 +826,7 @@ const Inventory = () => {
                         <div className="price-text">₱{Number(item.price).toFixed(2)}</div>
                       </div>
                       <span className={`status-badge ${statusType}`}>
-                        {statusType === 'ok' && '🟢 OK'}
+                        {statusType === 'ok' && (getItemBoxes(item).filter(b => !b.disabled && !b.ordered).length >= 6 ? '🟢 Full Stock' : '🟢 OK')}
                         {statusType === 'paubos' && '🟡 Low Stock'}
                         {statusType === 'ubos' && '🔴 Out of Stock'}
                       </span>
@@ -976,7 +976,7 @@ const Inventory = () => {
                       <td style={{ fontWeight: 700, color: '#64748b' }}>{threshold} {item.unit || 'kg'}</td>
                       <td>
                         <span className={`status-badge ${statusType}`}>
-                          {statusType === 'ok' && '🟢 OK'}
+                          {statusType === 'ok' && (availableBoxes.length >= 6 ? '🟢 Full Stock' : '🟢 OK')}
                           {statusType === 'paubos' && '🟡 Low Stock'}
                           {statusType === 'ubos' && '🔴 Out of Stock'}
                         </span>
